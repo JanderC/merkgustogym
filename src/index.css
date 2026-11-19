@@ -1,0 +1,129 @@
+@import '@fontsource-variable/archivo/wdth.css';
+@import '@fontsource-variable/manrope';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+  html,
+  body,
+  #root {
+    @apply h-full;
+  }
+  body {
+    @apply bg-ink-950 font-sans text-steel-200 antialiased;
+    background-image:
+      radial-gradient(1200px 600px at 100% -10%, rgba(255, 138, 16, 0.07), transparent 60%),
+      radial-gradient(900px 500px at -10% 110%, rgba(186, 191, 200, 0.05), transparent 60%);
+    background-attachment: fixed;
+  }
+  ::selection {
+    @apply bg-flame-500/40 text-white;
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #333a43 transparent;
+  }
+  input[type='number']::-webkit-inner-spin-button,
+  input[type='number']::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+  }
+}
+
+@layer components {
+  /* Títulos con el ancho expandido de Archivo: eco del logo */
+  .font-wide {
+    font-family: 'Archivo Variable', system-ui, sans-serif;
+    font-stretch: 125%;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+  }
+  .font-cond {
+    font-family: 'Archivo Variable', system-ui, sans-serif;
+    font-stretch: 75%;
+    font-weight: 700;
+  }
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .card {
+    @apply rounded-2xl border border-white/[0.06] bg-ink-900/80 shadow-card backdrop-blur;
+  }
+  .card-hover {
+    @apply transition hover:border-flame-500/30 hover:bg-ink-850;
+  }
+  /* Placa metálica con remaches: detalle de marca */
+  .plate {
+    @apply relative rounded-2xl border border-white/[0.07] bg-gradient-to-b from-ink-800 to-ink-900 shadow-card;
+  }
+  .plate::before,
+  .plate::after {
+    content: '';
+    @apply absolute top-3 h-1.5 w-1.5 rounded-full bg-steel-500/40;
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6);
+  }
+  .plate::before {
+    @apply left-3;
+  }
+  .plate::after {
+    @apply right-3;
+  }
+
+  .label {
+    @apply mb-1.5 block text-[11px] font-bold uppercase tracking-[0.12em] text-steel-400;
+  }
+  .input {
+    @apply h-11 w-full rounded-xl border border-white/[0.08] bg-ink-950/70 px-3.5 text-[15px] text-steel-100 outline-none transition placeholder:text-steel-500 focus:border-flame-500/70 focus:ring-4 focus:ring-flame-500/10 disabled:opacity-50;
+  }
+  textarea.input {
+    @apply h-auto py-2.5;
+  }
+
+  .btn {
+    @apply inline-flex h-11 select-none items-center justify-center gap-2 whitespace-nowrap rounded-xl px-4 text-sm font-bold transition active:scale-[0.98] disabled:pointer-events-none disabled:opacity-40;
+  }
+  .btn-primary {
+    @apply btn bg-flame-500 text-ink-950 shadow-glow hover:bg-flame-400;
+  }
+  .btn-ghost {
+    @apply btn border border-white/[0.08] bg-white/[0.03] text-steel-200 hover:border-white/20 hover:bg-white/[0.06];
+  }
+  .btn-danger {
+    @apply btn border border-bad/30 bg-bad/10 text-bad hover:bg-bad/20;
+  }
+  .btn-ok {
+    @apply btn bg-ok text-ink-950 hover:brightness-110;
+  }
+  .btn-sm {
+    @apply h-9 rounded-lg px-3 text-[13px];
+  }
+  .btn-xl {
+    @apply h-16 rounded-2xl px-6 text-lg;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider;
+  }
+  .table-base {
+    @apply w-full text-left text-sm;
+  }
+  .table-base th {
+    @apply border-b border-white/[0.06] px-4 py-3 text-[11px] font-bold uppercase tracking-[0.1em] text-steel-500;
+  }
+  .table-base td {
+    @apply border-b border-white/[0.04] px-4 py-3;
+  }
+  .table-base tbody tr {
+    @apply transition hover:bg-white/[0.02];
+  }
+
+  /* Franja de peligro (diferencias de caja) */
+  .hazard {
+    background-image: repeating-linear-gradient(-45deg, rgba(255, 90, 95, 0.16) 0 10px, transparent 10px 20px);
+  }
+}
