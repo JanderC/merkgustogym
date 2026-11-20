@@ -442,7 +442,7 @@ export default function Catalogo() {
           <ScanBarcode className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-steel-500" />
           <input
             className="input pl-11"
-            placeholder="Buscar o escanear código: si existe suma mercancía, si no lo crea"
+            placeholder="Buscar o escanear código: si existe lo abre, si no lo crea"
             value={buscarProd}
             onChange={(e) => setBuscarProd(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && escanearProd()}

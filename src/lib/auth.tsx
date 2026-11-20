@@ -1,11 +1,12 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { api, session, setUnauthorizedHandler, type SessionUser } from './api';
+import { api, session, sesionCoach, setUnauthorizedHandler, type SessionUser } from './api';
 import { setMonedaRef, type Moneda } from './monedas';
 
 interface AuthCtx {
   user: SessionUser | null;
-  login: (usuario: string, password: string) => Promise<SessionUser>;
+  /** Devuelve el usuario del equipo, o 'entrenador' si entró un entrenador (va a su app). */
+  login: (usuario: string, password: string) => Promise<SessionUser | 'entrenador'>;
   logout: () => void;
   gym: { nombre: string; slogan: string; moneda: string } | null;
 }
@@ -36,7 +37,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user]);
 
   const login = useCallback(async (usuario: string, password: string) => {
-    const r = await api<{ token: string; user: SessionUser }>('/auth/login', { body: { usuario, password } });
+    const r = await api<{ tipo: 'equipo' | 'entrenador'; token: string; user: SessionUser }>('/auth/login', { body: { usuario, password } });
+    if (r.tipo === 'entrenador') {
+      sesionCoach.save(r.token, { id: r.user.id, usuario: r.user.usuario, nombre: r.user.nombre });
+      return 'entrenador' as const;
+    }
     session.save(r.token, r.user);
     setUser(r.user);
     return r.user;

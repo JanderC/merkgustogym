@@ -1,6 +1,7 @@
-import { ArrowRight, Eye, EyeOff, Lock, User } from 'lucide-react';
+import { ArrowRight, Dumbbell, Eye, EyeOff, Lock, User, UserRound } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
-import { Navigate, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { sesionCoach } from '../lib/api';
 import { useAuth } from '../lib/auth';
 
 export default function Login() {
@@ -13,6 +14,7 @@ export default function Login() {
   const [cargando, setCargando] = useState(false);
 
   if (user) return <Navigate to={user.rol === 'cajero' ? '/mostrador' : '/panel'} replace />;
+  if (sesionCoach.token) return <Navigate to="/coach" replace />;
 
   const enviar = async (e: FormEvent) => {
     e.preventDefault();
@@ -20,7 +22,8 @@ export default function Login() {
     setCargando(true);
     try {
       const u = await login(usuario, password);
-      nav(u.rol === 'cajero' ? '/mostrador' : '/panel', { replace: true });
+      if (u === 'entrenador') nav('/coach', { replace: true });
+      else nav(u.rol === 'cajero' ? '/mostrador' : '/panel', { replace: true });
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -68,7 +71,9 @@ export default function Login() {
           <img src="/logo-full.png" alt="GYM Merkgusto" className="mx-auto mb-10 w-48 lg:hidden" />
           <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-flame-500">Bienvenido</p>
           <h1 className="mt-2 font-wide text-3xl text-white">Inicia tu turno</h1>
-          <p className="mt-2 text-sm text-steel-400">Ingresa con el usuario que te asignó el dueño.</p>
+          <p className="mt-2 text-sm text-steel-400">
+            Ingresa con el usuario que te asignó el dueño. <span className="inline-flex items-center gap-1 text-steel-300"><Dumbbell className="h-3.5 w-3.5 text-flame-500" /> Entrenadores también.</span>
+          </p>
 
           <div className="mt-8 space-y-4">
             <div className="relative">
@@ -94,6 +99,16 @@ export default function Login() {
           <button className="btn-primary btn-xl mt-6 w-full" disabled={cargando || !usuario || !password}>
             {cargando ? 'Entrando…' : 'Entrar'} <ArrowRight className="h-5 w-5" />
           </button>
+          <Link to="/cliente" className="mt-6 flex items-center gap-3 rounded-2xl border border-white/[0.08] bg-white/[0.02] p-4 transition hover:border-flame-500/40 hover:bg-flame-500/[0.04]">
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-flame-500/10 text-flame-400">
+              <UserRound className="h-5 w-5" />
+            </span>
+            <span className="flex-1">
+              <span className="block text-sm font-bold text-steel-100">¿Eres cliente del gimnasio?</span>
+              <span className="block text-xs text-steel-500">Entra con tu cédula: tus días, tu progreso y tu rutina</span>
+            </span>
+            <ArrowRight className="h-4 w-4 text-steel-500" />
+          </Link>
         </form>
       </div>
     </div>

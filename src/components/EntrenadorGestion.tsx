@@ -15,16 +15,18 @@ import {
   EyeOff,
   FileText,
   Hand,
+  KeyRound,
   Pencil,
   Power,
   RefreshCw,
   ScanFace,
+  Smartphone,
   UserPlus,
 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
-import { fechaHora, hoyISO, hora, sumarDias } from '../lib/format';
+import { fechaHora, hace, hoyISO, hora, sumarDias } from '../lib/format';
 import type { BioEstado, EntrenadorHoy, Horario, TipoMarcacion } from '../lib/types';
 import { INFO, leerMonto, MONEDAS, type Moneda } from '../lib/monedas';
 import { EntrenadorAvatar, EstadoEntrenador, fotoEntrenadorUrl } from './entrenadores';
@@ -47,6 +49,11 @@ export interface Entrenador {
   pagoTipo?: PagoTipo;
   pagoTarifa?: number;
   pagoMoneda?: Moneda;
+  /** App de entrenadores */
+  usuario?: string | null;
+  tieneAcceso?: boolean;
+  ultimoAcceso?: string | null;
+  clientes?: number;
 }
 export type PagoTipo = 'ninguno' | 'fijo' | 'por_hora' | 'por_clase';
 export const TIPOS_PAGO: Array<{ value: PagoTipo; label: string; unidad: string }> = [
@@ -593,6 +600,8 @@ export function FichaEntrenador({ e, hoy, onClose, onEditar }: { e: Entrenador; 
         <Accion icon={<ScanFace className="h-5 w-5" />} label={e.tieneFoto ? 'Reenviar al lector' : 'Tomar rostro'} onClick={() => (e.tieneFoto ? sync.mutate() : onEditar())} disabled={sync.isPending} />
       </div>
 
+      <AccesoApp e={e} />
+
       <p className="label mt-6">Este mes</p>
       <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
         <Dato n={mes?.diasTrabajados ?? '—'} t="Días" />
@@ -657,6 +666,70 @@ export function FichaEntrenador({ e, hoy, onClose, onEditar }: { e: Entrenador; 
       {manual && <MarcacionManualModal entrenador={e} siguientes={hoy?.siguientes} onClose={() => setManual(false)} />}
       {permiso && <PermisoAdminModal entrenadores={[e]} inicial={e.id} onClose={() => setPermiso(false)} />}
     </Drawer>
+  );
+}
+
+/** Usuario y contraseña para la app de entrenadores (ve a sus clientes, sus clases y sus rutinas). */
+function AccesoApp({ e }: { e: Entrenador }) {
+  const refrescar = useRefrescarEntrenadores();
+  const sugerido = `${e.nombre}${e.apellido ? `.${e.apellido}` : ''}`
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/[^a-z0-9.]/g, '')
+    .slice(0, 30);
+  const [tiene, setTiene] = useState(!!e.tieneAcceso);
+  const [editando, setEditando] = useState(false);
+  const [usuario, setUsuario] = useState(e.usuario ?? sugerido);
+  const [password, setPassword] = useState('');
+  const guardar = useMutation({
+    mutationFn: () => api(`/entrenadores/${e.id}/acceso`, { method: 'PUT', body: { usuario, ...(password && { password }) } }),
+    onSuccess: () => {
+      toast.success(`${e.nombre} ya puede entrar a su app`, { description: `Usuario: ${usuario}` });
+      setTiene(true);
+      setEditando(false);
+      setPassword('');
+      refrescar();
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+  const quitar = useMutation({
+    mutationFn: () => api(`/entrenadores/${e.id}/acceso`, { method: 'DELETE' }),
+    onSuccess: () => (toast.success('Acceso quitado: su sesión se cerró'), setTiene(false), refrescar()),
+    onError: (err: Error) => toast.error(err.message),
+  });
+  return (
+    <div className="mt-6 rounded-2xl border border-flame-500/20 bg-flame-500/[0.04] p-4">
+      <div className="flex items-start gap-3">
+        <Smartphone className="mt-0.5 h-5 w-5 shrink-0 text-flame-400" />
+        <div className="min-w-0 flex-1">
+          <p className="font-bold text-steel-100">App del entrenador</p>
+          <p className="text-xs text-steel-400">
+            {tiene
+              ? `Entra en ${window.location.origin}/login con el usuario ${e.usuario ?? usuario}.${e.ultimoAcceso ? ` Último acceso ${hace(e.ultimoAcceso)}.` : ''}${e.clientes ? ` Atiende ${e.clientes} cliente(s).` : ''}`
+              : 'Dale usuario y contraseña: desde su teléfono verá a sus clientes, sus clases, les asigna rutinas, toma medidas y pasa lista.'}
+          </p>
+        </div>
+      </div>
+      {editando || !tiene ? (
+        <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+          <input className="input" placeholder="Usuario" value={usuario} onChange={(ev) => setUsuario(ev.target.value.toLowerCase().replace(/\s/g, ''))} />
+          <input className="input" placeholder={tiene ? 'Nueva contraseña (opcional)' : 'Contraseña (mín. 6)'} type="text" autoComplete="off" value={password} onChange={(ev) => setPassword(ev.target.value)} />
+          <button className="btn-primary" disabled={usuario.length < 3 || (!tiene && password.length < 6) || (!!password && password.length < 6) || guardar.isPending} onClick={() => guardar.mutate()}>
+            <KeyRound className="h-4 w-4" /> {tiene ? 'Guardar' : 'Dar acceso'}
+          </button>
+        </div>
+      ) : (
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button className="btn-ghost btn-sm" onClick={() => setEditando(true)}>
+            <KeyRound className="h-4 w-4" /> Cambiar usuario o contraseña
+          </button>
+          <button className="btn-ghost btn-sm hover:text-bad" disabled={quitar.isPending} onClick={() => confirm(`¿Quitar el acceso a la app de ${e.nombre}?`) && quitar.mutate()}>
+            Quitar acceso
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 

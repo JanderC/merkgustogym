@@ -3,7 +3,7 @@
  * evolución y la rutina asignada.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ClipboardCopy, Dumbbell, Link2, Link2Off, MessageCircle, Plus, Ruler, Trash2, X } from 'lucide-react';
+import { ClipboardCopy, Dumbbell, KeyRound, Link2, Link2Off, MessageCircle, Plus, Ruler, ShieldCheck, Smartphone, Trash2, X } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
@@ -44,6 +44,10 @@ interface Progreso {
   mediciones: Medicion[];
   rutinas: Rutina[];
   portal: { activo: boolean; creadoEn: string | null };
+  app: { clave: boolean; ultimoAcceso: string | null };
+  entrenos: { racha: number; estaSemana: number; ultimo: string | null };
+  entrenadorId: string | null;
+  entrenadores: Array<{ id: string; nombre: string; apellido: string; especialidad: string | null }>;
 }
 
 export const MEDIDAS: Array<{ k: keyof Medicion; label: string; unidad: string }> = [
@@ -96,6 +100,16 @@ export function ProgresoSocio({ socioId, nombre, telefono }: { socioId: string; 
     onSuccess: () => (toast.success('Acceso desactivado: el enlace anterior ya no abre'), setEnlace(null), refrescar()),
     onError: (e: Error) => toast.error(e.message),
   });
+  const entrenador = useMutation({
+    mutationFn: (entrenadorId: string | null) => api(`/socios/${socioId}/entrenador`, { method: 'PUT', body: { entrenadorId } }),
+    onSuccess: (_r, e) => (toast.success(e ? 'Entrenador asignado: ya lo ve en su app' : 'Sin entrenador asignado'), refrescar()),
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const quitarClave = useMutation({
+    mutationFn: () => api(`/socios/${socioId}/app-clave`, { method: 'DELETE' }),
+    onSuccess: () => (toast.success('Clave quitada: ya puede entrar solo con su cédula y crear una nueva'), refrescar()),
+    onError: (e: Error) => toast.error(e.message),
+  });
   const borrar = useMutation({
     mutationFn: (mid: number) => api(`/socios/${socioId}/mediciones/${mid}`, { method: 'DELETE' }),
     onSuccess: refrescar,
@@ -111,6 +125,52 @@ export function ProgresoSocio({ socioId, nombre, telefono }: { socioId: string; 
 
   return (
     <>
+      {/* ── Entrenador y app del cliente ── */}
+      <h4 className="label mt-7">Entrenador y app</h4>
+      <div className="grid gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-4 sm:grid-cols-2">
+        <div>
+          <span className="mb-1 flex items-center gap-1.5 text-xs font-bold text-steel-400">
+            <Dumbbell className="h-3.5 w-3.5" /> Su entrenador
+          </span>
+          <select className="input" value={data.entrenadorId ?? ''} disabled={entrenador.isPending} onChange={(e) => entrenador.mutate(e.target.value || null)}>
+            <option value="">Sin entrenador</option>
+            {data.entrenadores.map((e) => (
+              <option key={e.id} value={e.id}>
+                {`${e.nombre} ${e.apellido}`.trim()}
+                {e.especialidad ? ` · ${e.especialidad}` : ''}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-[11px] text-steel-600">Lo verá en la app del entrenador para darle rutina y seguimiento.</p>
+        </div>
+        <div>
+          <span className="mb-1 flex items-center gap-1.5 text-xs font-bold text-steel-400">
+            <Smartphone className="h-3.5 w-3.5" /> Su app
+          </span>
+          <p className="text-sm text-steel-300">
+            {data.app.clave ? (
+              <>
+                <ShieldCheck className="mr-1 inline h-4 w-4 text-ok" /> Privada (entra con cédula y clave)
+              </>
+            ) : (
+              'Entra con su cédula (sin clave)'
+            )}
+          </p>
+          <p className="text-[11px] text-steel-500">
+            {data.app.ultimoAcceso ? `Último uso ${hace(data.app.ultimoAcceso)}` : 'Aún no la ha usado'}
+            {data.entrenos.racha > 0 && ` · racha de ${data.entrenos.racha} semana(s)`}
+          </p>
+          {data.app.clave && (
+            <button className="btn-ghost btn-sm mt-2" disabled={quitarClave.isPending} onClick={() => confirm(`¿Quitar la clave de ${nombre}? Podrá entrar solo con su cédula y crear una nueva.`) && quitarClave.mutate()}>
+              <KeyRound className="h-4 w-4" /> Olvidó su clave: quitarla
+            </button>
+          )}
+        </div>
+        <p className="text-[11px] text-steel-600 sm:col-span-2">
+          Dirección para clientes: <b className="text-steel-400">{window.location.origin}/cliente</b>
+        </p>
+      </div>
+
       {/* ── Portal del cliente ── */}
       <h4 className="label mt-7">Su enlace personal</h4>
       <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
@@ -120,7 +180,7 @@ export function ProgresoSocio({ socioId, nombre, telefono }: { socioId: string; 
               <Link2 className="mr-1 inline h-4 w-4 text-ok" /> Tiene acceso desde {hace(data.portal.creadoEn)}. Ahí ve su plan, sus entradas, su progreso y su rutina.
             </>
           ) : (
-            'Un enlace solo para el cliente (sin usuario ni clave) donde ve su plan, sus entradas, su progreso y su rutina.'
+            'Un enlace solo para el cliente: abre su app sin pedir clave (sirve si la olvidó). Ahí ve su plan, su progreso y su rutina.'
           )}
         </p>
         {enlace && (

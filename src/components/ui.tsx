@@ -143,13 +143,13 @@ export function Drawer({ title, subtitle, onClose, children, footer }: { title: 
   );
 }
 
-export function Avatar({ socioId, nombre, tieneFoto, size = 40, bust, ring }: { socioId?: string | null; nombre: string; tieneFoto?: boolean | null; size?: number; bust?: string | number; ring?: 'ok' | 'bad' | 'flame' }) {
+export function Avatar({ socioId, nombre, tieneFoto, size = 40, bust, ring, token }: { socioId?: string | null; nombre: string; tieneFoto?: boolean | null; size?: number; bust?: string | number; ring?: 'ok' | 'bad' | 'flame'; token?: string | null }) {
   const [err, setErr] = useState(false);
   const ringCls = ring === 'ok' ? 'ring-ok' : ring === 'bad' ? 'ring-bad' : ring === 'flame' ? 'ring-flame-500' : 'ring-white/10';
   return (
     <div className={cx('relative shrink-0 overflow-hidden rounded-full bg-ink-700 ring-2', ringCls)} style={{ width: size, height: size }}>
       {socioId && tieneFoto && !err ? (
-        <img src={fotoUrl(socioId, bust)} alt="" className="h-full w-full object-cover" onError={() => setErr(true)} />
+        <img src={fotoUrl(socioId, bust, token === undefined ? undefined : token)} alt="" className="h-full w-full object-cover" onError={() => setErr(true)} />
       ) : (
         <div className="grid h-full w-full place-items-center font-display font-extrabold text-steel-300" style={{ fontSize: size * 0.36 }}>
           {iniciales(nombre)}

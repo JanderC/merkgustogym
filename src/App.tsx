@@ -11,6 +11,9 @@ import TasasPage from './pages/dueno/Tasas';
 import Login from './pages/Login';
 import Pantalla from './pages/Pantalla';
 import Portal from './pages/Portal';
+import ClienteApp from './pages/cliente/ClienteApp';
+import EntrarCliente from './pages/cliente/Entrar';
+import CoachApp from './pages/coach/CoachApp';
 import Cobrar from './pages/cajero/Cobrar';
 import Entradas from './pages/cajero/Entradas';
 import MiTurno from './pages/cajero/MiTurno';
@@ -49,8 +52,12 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
-      {/* Enlace personal del cliente: sin sesión */}
+      {/* App del cliente: cédula (+ clave si es privada) o su enlace personal */}
       <Route path="/socio/:token" element={<Portal />} />
+      <Route path="/cliente" element={<EntrarCliente />} />
+      <Route path="/cliente/app/*" element={<ClienteApp />} />
+      {/* App de entrenadores (entran por /login con su usuario) */}
+      <Route path="/coach/*" element={<CoachApp />} />
       <Route
         path="/pantalla"
         element={
