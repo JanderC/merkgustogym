@@ -127,3 +127,9 @@
     background-image: repeating-linear-gradient(-45deg, rgba(255, 90, 95, 0.16) 0 10px, transparent 10px 20px);
   }
 }
+
+/* Códigos de supervisor: sin el "ojo" de Edge para revelar lo escrito */
+input.pin::-ms-reveal,
+input.pin::-ms-clear {
+  display: none;
+}

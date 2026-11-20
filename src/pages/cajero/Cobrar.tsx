@@ -1,14 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowDownCircle, ArrowUpCircle, CalendarCheck, CheckCircle2, HandCoins, Keyboard, Minus, Package, Plus, Power, Receipt, Search, ShoppingBag, Trash2, UserPlus, UserRound, Users, X, Zap } from 'lucide-react';
+import { ArrowDownCircle, ArrowUpCircle, CalendarCheck, CheckCircle2, HandCoins, Keyboard, Minus, Package, Plus, Power, Receipt, ScanBarcode, ShoppingBag, Trash2, Undo2, UserPlus, UserRound, Users, X, Zap } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { ClienteNuevo, EstadoLector, type VentaHecha } from '../../components/ClienteNuevo';
+import { DevolucionModal } from '../../components/Devolucion';
 import { PanelPago, Precio, type PagoPayload } from '../../components/PanelPago';
 import { SocioPicker } from '../../components/socios';
 import { Avatar, cx, Empty, Loading, Modal, Tabs } from '../../components/ui';
 import { api } from '../../lib/api';
-import { duracion, fecha, hora } from '../../lib/format';
+import { duracion, fecha } from '../../lib/format';
 import { MovimientoModal } from './MiTurno';
 import { useCatalogo, useTurno } from '../../lib/hooks';
 import { fmt, type Moneda } from '../../lib/monedas';
@@ -79,6 +80,7 @@ export default function Cobrar() {
   const buscarRef = useRef<HTMLInputElement>(null);
   const clienteRef = useRef<HTMLDivElement>(null);
   const [mov, setMov] = useState<null | 'ingreso' | 'egreso'>(null);
+  const [devolucion, setDevolucion] = useState(false);
 
   // Atajos: F2 cliente · F3 producto · F8 gasto · F9 ingreso
   useEffect(() => {
@@ -130,7 +132,9 @@ export default function Cobrar() {
   const categorias = useMemo(() => ['Todas', ...new Set((cat?.productos ?? []).map((p) => p.categoria))], [cat]);
   const productos = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
-    return (cat?.productos ?? []).filter((p) => (categoria === 'Todas' || p.categoria === categoria) && (!q || p.nombre.toLowerCase().includes(q) || p.categoria.toLowerCase().includes(q)));
+    return (cat?.productos ?? []).filter(
+      (p) => (categoria === 'Todas' || p.categoria === categoria) && (!q || p.nombre.toLowerCase().includes(q) || p.categoria.toLowerCase().includes(q) || (p.codigoBarras ?? '').toLowerCase() === q),
+    );
   }, [cat, busqueda, categoria]);
 
   const addPlan = (p: Plan) => {
@@ -153,6 +157,48 @@ export default function Cobrar() {
       }
       return [...ls, { key: `p${p.id}`, tipo: 'producto', id: p.id, nombre: p.nombre, precio: p.precio, moneda: p.moneda, cantidad: 1, stock: p.stock, controla: p.controlaStock }];
     });
+  // Lector de código de barras: escribe el código muy rápido y termina con Enter
+  const porCodigo = (codigo: string) => {
+    const c = codigo.trim().toLowerCase();
+    return c ? cat?.productos.find((p) => p.codigoBarras && p.codigoBarras.toLowerCase() === c) : undefined;
+  };
+  const escanear = (codigo: string) => {
+    const p = porCodigo(codigo);
+    if (!p) {
+      toast.error(`Código ${codigo.trim()} no registrado`, { description: 'El dueño lo asigna en Planes y productos → Tienda.' });
+      return false;
+    }
+    if (p.controlaStock && p.stock <= 0) {
+      toast.warning(`${p.nombre}: agotado`);
+      return true;
+    }
+    addProducto(p);
+    toast.success(`+1 ${p.nombre}`, { duration: 1200 });
+    return true;
+  };
+  const escanearRef = useRef(escanear);
+  escanearRef.current = escanear;
+  useEffect(() => {
+    let buf = '';
+    let ultimo = 0;
+    const h = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      // Si está escribiendo en un campo, ese campo decide (el buscador de productos ya entiende códigos)
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return;
+      const ahora = Date.now();
+      if (ahora - ultimo > 60) buf = '';
+      ultimo = ahora;
+      if (e.key === 'Enter') {
+        if (buf.length >= 4) {
+          e.preventDefault();
+          escanearRef.current(buf);
+        }
+        buf = '';
+      } else if (e.key.length === 1) buf += e.key;
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, []);
   const addAbono = (d: Deuda) =>
     setLineas((ls) => (ls.some((l) => l.key === `a${d.id}`) ? ls : [...ls, { key: `a${d.id}`, tipo: 'abono', id: d.id, nombre: `Abono: ${d.concepto}`, precio: Number(d.saldo), moneda: d.moneda, cantidad: 1 }]));
   const cambiarCant = (key: string, d: number) =>
@@ -206,8 +252,7 @@ export default function Cobrar() {
             <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-ok" />
           </span>
           <p className="text-sm text-steel-300">
-            <b className="text-white">Turno #{turno.numero}</b> · {duracion(turno.abiertoEn)} · <b className="text-white">{turno.operaciones}</b> venta(s)
-            {turno.ventas[0] && <span className="text-steel-500"> · última {hora(turno.ventas[0].creadoEn)}</span>}
+            <b className="text-white">Turno #{turno.numero}</b> · {duracion(turno.abiertoEn)}
           </p>
           <div className="ml-auto flex flex-wrap gap-2">
             <button className="btn-ghost btn-sm" onClick={() => setMov('ingreso')} title="F9">
@@ -215,6 +260,9 @@ export default function Cobrar() {
             </button>
             <button className="btn-ghost btn-sm" onClick={() => setMov('egreso')} title="F8">
               <ArrowUpCircle className="h-4 w-4 text-bad" /> Gasto
+            </button>
+            <button className="btn-ghost btn-sm" onClick={() => setDevolucion(true)} title="Requiere el código del supervisor">
+              <Undo2 className="h-4 w-4 text-sky-300" /> Devolución
             </button>
             <Link to="/mostrador/turno" className="btn-ghost btn-sm">
               <Receipt className="h-4 w-4" /> Mi turno
@@ -339,16 +387,23 @@ export default function Cobrar() {
         ) : (
           <div className="space-y-4">
             <div className="relative">
-              <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-steel-500" />
+              <ScanBarcode className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-steel-500" />
               <input
                 ref={buscarRef}
                 className="input pl-11"
-                placeholder="Buscar producto… (Enter agrega si hay uno solo)"
+                placeholder="Buscar o escanear código de barras… (Enter agrega)"
                 value={busqueda}
                 onChange={(e) => setBusqueda(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && productos.length === 1) {
+                  if (e.key !== 'Enter') return;
+                  if (porCodigo(busqueda)) {
+                    escanear(busqueda);
+                    setBusqueda('');
+                  } else if (productos.length === 1) {
                     addProducto(productos[0]!);
+                    setBusqueda('');
+                  } else if (/^\d{6,}$/.test(busqueda.trim())) {
+                    escanear(busqueda);
                     setBusqueda('');
                   }
                 }}
@@ -410,19 +465,9 @@ export default function Cobrar() {
                   <p className="mt-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-steel-600">
                     <Keyboard className="h-3.5 w-3.5" /> <span><b className="text-steel-400">F2</b> cliente</span> <span><b className="text-steel-400">F3</b> producto</span> <span><b className="text-steel-400">F8</b> gasto</span> <span><b className="text-steel-400">F9</b> ingreso</span>
                   </p>
-                  {turno.ventas.length > 0 && (
-                    <div className="mt-4 space-y-1 border-t border-dashed border-white/10 pt-3">
-                      <p className="px-1 text-[11px] font-bold uppercase tracking-wider text-steel-600">Tus últimas ventas</p>
-                      {turno.ventas.slice(0, 4).map((v) => (
-                        <p key={v.id} className={cx('flex justify-between gap-3 px-1 text-xs', v.estado === 'anulada' ? 'text-steel-600 line-through' : 'text-steel-400')}>
-                          <span className="truncate">
-                            #{v.numero} {v.items.join(', ')}
-                          </span>
-                          <span className="tnum shrink-0">{hora(v.creadoEn)}</span>
-                        </p>
-                      ))}
-                    </div>
-                  )}
+                  <p className="mt-1.5 flex items-center justify-center gap-1.5 text-[11px] text-steel-600">
+                    <ScanBarcode className="h-3.5 w-3.5" /> Pasa el producto por el lector de código de barras y se agrega solo
+                  </p>
                 </div>
               )}
               {lineas.map((l) => (
@@ -497,6 +542,7 @@ export default function Cobrar() {
         </div>
       </aside>
 
+      {devolucion && <DevolucionModal onClose={() => setDevolucion(false)} />}
       {mov && <MovimientoModal tipo={mov} onClose={() => setMov(null)} onDone={() => void qc.invalidateQueries({ queryKey: ['turno'] })} />}
       {nuevo !== null && <ClienteNuevo nombreInicial={nuevo} onClose={() => setNuevo(null)} />}
 

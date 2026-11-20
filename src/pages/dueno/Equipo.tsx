@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, Pencil, ShieldCheck, UserPlus } from 'lucide-react';
+import { KeyRound, LockKeyhole, Pencil, ShieldCheck, UserPlus } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Avatar, cx, Field, Loading, Modal, PageHeader, Toggle } from '../../components/ui';
@@ -14,6 +14,58 @@ interface Usuario {
   telefono: string | null;
   activo: boolean;
   ultimoAcceso: string | null;
+  tienePin?: boolean;
+}
+
+/** Código de supervisor: lo escribe en la caja para autorizar una devolución. */
+function PinModal({ u, onClose }: { u: Usuario; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [pin, setPin] = useState('');
+  const [rep, setRep] = useState('');
+  const m = useMutation({
+    mutationFn: (valor: string) => api(`/usuarios/${u.id}/pin`, { method: 'PUT', body: { pin: valor } }),
+    onSuccess: (_r, valor) => {
+      toast.success(valor ? `Código de autorización guardado para ${u.nombre}` : 'Código quitado');
+      void qc.invalidateQueries({ queryKey: ['usuarios'] });
+      onClose();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const ok = /^\d{4,8}$/.test(pin) && pin === rep;
+  return (
+    <Modal
+      title={`Código de supervisor · ${u.nombre}`}
+      size="sm"
+      onClose={onClose}
+      footer={
+        <div className="flex w-full justify-between gap-2">
+          {u.tienePin ? (
+            <button className="btn-ghost text-bad" disabled={m.isPending} onClick={() => m.mutate('')}>
+              Quitar código
+            </button>
+          ) : (
+            <span />
+          )}
+          <button className="btn-primary" disabled={!ok || m.isPending} onClick={() => m.mutate(pin)}>
+            Guardar código
+          </button>
+        </div>
+      }
+    >
+      <p className="mb-4 text-sm text-steel-400">
+        Con este código {u.nombre} autoriza las <b className="text-steel-100">devoluciones</b> en caja. Es distinto a su contraseña, de 4 a 8 números, y no se lo debe dar a las cajeras.
+      </p>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Código nuevo">
+          <input className="input pin tnum text-center text-xl tracking-[0.5em]" type="password" inputMode="numeric" maxLength={8} value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} autoFocus />
+        </Field>
+        <Field label="Repítelo">
+          <input className="input pin tnum text-center text-xl tracking-[0.5em]" type="password" inputMode="numeric" maxLength={8} value={rep} onChange={(e) => setRep(e.target.value.replace(/\D/g, ''))} />
+        </Field>
+      </div>
+      {rep.length >= 4 && pin !== rep && <p className="mt-2 text-xs text-warn">Los códigos no coinciden</p>}
+    </Modal>
+  );
 }
 
 function UsuarioModal({ u, onClose }: { u: Usuario | null; onClose: () => void }) {
@@ -65,6 +117,7 @@ function UsuarioModal({ u, onClose }: { u: Usuario | null; onClose: () => void }
 
 export default function Equipo() {
   const [edit, setEdit] = useState<Usuario | null | undefined>(undefined);
+  const [pinDe, setPinDe] = useState<Usuario | null>(null);
   const { data, isLoading } = useQuery({ queryKey: ['usuarios'], queryFn: () => api<Usuario[]>('/usuarios') });
   return (
     <div>
@@ -93,6 +146,14 @@ export default function Equipo() {
                   {u.rol === 'dueno' ? <ShieldCheck className="h-3.5 w-3.5 text-flame-500" /> : <KeyRound className="h-3.5 w-3.5" />}
                   {u.rol === 'dueno' ? 'Dueño' : u.rol === 'admin_caja' ? 'Admin. de caja' : 'Recepción'} · entró {hace(u.ultimoAcceso)}
                 </p>
+                {u.rol !== 'cajero' && (
+                  <button
+                    className={cx('chip mt-2 cursor-pointer py-1', u.tienePin ? 'border-ok/30 text-ok hover:bg-ok/10' : 'border-warn/40 text-warn hover:bg-warn/10')}
+                    onClick={() => setPinDe(u)}
+                  >
+                    <LockKeyhole className="h-3 w-3" /> {u.tienePin ? 'Autoriza devoluciones' : 'Asignar código de supervisor'}
+                  </button>
+                )}
               </div>
               <button className="rounded-lg p-2 text-steel-500 hover:text-white" onClick={() => setEdit(u)}>
                 <Pencil className="h-4 w-4" />
@@ -102,6 +163,7 @@ export default function Equipo() {
         </div>
       )}
       {edit !== undefined && <UsuarioModal u={edit} onClose={() => setEdit(undefined)} />}
+      {pinDe && <PinModal u={pinDe} onClose={() => setPinDe(null)} />}
     </div>
   );
 }

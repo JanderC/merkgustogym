@@ -116,6 +116,7 @@ export interface Producto {
   stockMinimo?: number;
   controlaStock: boolean;
   activo?: boolean;
+  codigoBarras?: string | null;
 }
 
 export interface MetodoPago {
@@ -140,25 +141,10 @@ export interface Catalogo {
   masVendidos?: number[];
 }
 
-export interface MovimientoCiego {
-  id: number;
-  tipo: 'ingreso' | 'egreso';
-  categoria: string;
-  concepto: string;
-  moneda: Moneda;
-  metodo: string;
-  montoTexto: string;
-  creadoEn: string;
-  anulado: boolean;
-}
-
 export interface TurnoCiego {
   id: string;
   numero: number;
   abiertoEn: string;
-  operaciones: number;
-  ventas: Array<{ id: string; numero: number; creadoEn: string; estado: 'pagada' | 'anulada'; socio: string | null; items: string[]; metodos: string[]; quedoDebiendo: boolean }>;
-  movimientos: MovimientoCiego[];
 }
 
 export interface FilaArqueo {

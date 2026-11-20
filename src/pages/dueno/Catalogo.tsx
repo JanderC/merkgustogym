@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Archive, PackagePlus, Pencil, Plus, RotateCcw, Snowflake, Trash2, Users } from 'lucide-react';
+import { Archive, PackagePlus, Pencil, Plus, RotateCcw, ScanBarcode, Snowflake, Trash2, Users } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Precio } from '../../components/PanelPago';
@@ -202,12 +202,13 @@ function ProductoModal({ prod, onClose }: { prod: Partial<Producto> | null; onCl
     stockMinimo: prod?.stockMinimo ?? 5,
     controlaStock: prod?.controlaStock ?? true,
     activo: prod?.activo ?? true,
+    codigoBarras: prod?.codigoBarras ?? '',
   });
   const precio = leerMonto(f.precio);
   const costo = leerMonto(f.costo);
   const m = useMutation({
     mutationFn: () => {
-      const body = { ...f, precio, costo };
+      const body = { ...f, precio, costo, codigoBarras: f.codigoBarras.trim() || null };
       return prod?.id ? api(`/productos/${prod.id}`, { method: 'PUT', body }) : api('/productos', { body });
     },
     onSuccess: () => {
@@ -231,6 +232,18 @@ function ProductoModal({ prod, onClose }: { prod: Partial<Producto> | null; onCl
       <div className="grid grid-cols-2 gap-4">
         <Field label="Nombre" className="col-span-2">
           <input className="input" value={f.nombre} onChange={(e) => setF({ ...f, nombre: e.target.value })} />
+        </Field>
+        <Field label="Código de barras" className="col-span-2" hint="Haz clic aquí y pasa el producto por el lector; o escríbelo. Vacío si no tiene.">
+          <div className="relative">
+            <ScanBarcode className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-steel-500" />
+            <input
+              className="input tnum pl-10 tracking-wider"
+              value={f.codigoBarras}
+              placeholder="7591234567890"
+              onChange={(e) => setF({ ...f, codigoBarras: e.target.value.replace(/\s/g, '') })}
+              onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()}
+            />
+          </div>
         </Field>
         <Field label="Categoría" className="col-span-2">
           <input className="input" value={f.categoria} onChange={(e) => setF({ ...f, categoria: e.target.value })} list="cats" />
@@ -309,6 +322,23 @@ export default function Catalogo() {
   const { data: cat } = useCatalogo();
   const planes = useQuery({ queryKey: ['planes'], queryFn: () => api<Plan[]>('/planes') });
   const productos = useQuery({ queryKey: ['productos'], queryFn: () => api<Producto[]>('/productos') });
+  const [buscarProd, setBuscarProd] = useState('');
+  const qp = buscarProd.trim().toLowerCase();
+  const listaProd = (productos.data ?? []).filter((p) => !qp || p.nombre.toLowerCase().includes(qp) || p.categoria.toLowerCase().includes(qp) || (p.codigoBarras ?? '').toLowerCase() === qp);
+  // Pistola en el buscador: si el código existe abre la entrada de mercancía; si no, crea el producto con ese código
+  const escanearProd = () => {
+    const c = buscarProd.trim();
+    if (!c) return;
+    const p = productos.data?.find((x) => x.codigoBarras && x.codigoBarras.toLowerCase() === c.toLowerCase());
+    if (p) {
+      if (p.controlaStock) setStock(p);
+      else setProd(p);
+      setBuscarProd('');
+    } else if (/^[0-9A-Za-z._-]{4,40}$/.test(c) && listaProd.length === 0) {
+      setProd({ codigoBarras: c });
+      setBuscarProd('');
+    }
+  };
 
   return (
     <div>
@@ -392,6 +422,17 @@ export default function Catalogo() {
       ) : productos.isLoading ? (
         <Loading />
       ) : (
+        <div className="space-y-3">
+        <div className="relative max-w-xl">
+          <ScanBarcode className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-steel-500" />
+          <input
+            className="input pl-11"
+            placeholder="Buscar o escanear código: si existe suma mercancía, si no lo crea"
+            value={buscarProd}
+            onChange={(e) => setBuscarProd(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && escanearProd()}
+          />
+        </div>
         <div className="card overflow-x-auto">
           <table className="table-base">
             <thead>
@@ -405,12 +446,21 @@ export default function Catalogo() {
               </tr>
             </thead>
             <tbody>
-              {productos.data?.map((p) => {
+              {listaProd.map((p) => {
                 const bajo = p.controlaStock && p.stock <= (p.stockMinimo ?? 0);
                 const costo = Number(p.costo ?? 0);
                 return (
                   <tr key={p.id} className={cx(!p.activo && 'opacity-50')}>
-                    <td className="font-bold text-steel-100">{p.nombre}</td>
+                    <td>
+                      <p className="font-bold text-steel-100">{p.nombre}</p>
+                      {p.codigoBarras ? (
+                        <p className="tnum flex items-center gap-1 text-[11px] tracking-wider text-steel-500">
+                          <ScanBarcode className="h-3 w-3" /> {p.codigoBarras}
+                        </p>
+                      ) : (
+                        <p className="text-[11px] text-steel-600">sin código de barras</p>
+                      )}
+                    </td>
                     <td className="text-steel-400">{p.categoria}</td>
                     <td className="tnum text-right text-steel-100">{fmt(Number(p.precio), p.moneda)}</td>
                     <td className="tnum text-right text-steel-400">{costo > 0 ? `${Math.round(((Number(p.precio) - costo) / Number(p.precio)) * 100)}%` : '—'}</td>
@@ -432,6 +482,7 @@ export default function Catalogo() {
               })}
             </tbody>
           </table>
+        </div>
         </div>
       )}
       {plan !== undefined && (
