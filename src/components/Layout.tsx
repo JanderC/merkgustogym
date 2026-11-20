@@ -1,31 +1,4 @@
-import {
-  ArrowLeftRight,
-  BarChart3,
-  CalendarClock,
-  CalendarDays,
-  Dumbbell,
-  Wallet,
-  Boxes,
-  ClipboardList,
-  DoorOpen,
-  Gauge,
-  KeyRound,
-  LogOut,
-  Menu,
-  MessageCircle,
-  Monitor,
-  Radio,
-  Receipt,
-  ScanFace,
-  Settings,
-  ShoppingCart,
-  Store,
-  Timer,
-  UserCog,
-  Users,
-  Vault,
-  X,
-} from 'lucide-react';
+import { ArrowLeftRight, BarChart3, Boxes, CalendarClock, CalendarDays, ClipboardList, DoorOpen, Dumbbell, Gauge, KeyRound, LogOut, Menu, MessageCircle, Monitor, Radio, Receipt, ScanFace, Settings, ShoppingCart, Store, Timer, UserCog, Users, Vault, Wallet, Warehouse, X } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
@@ -142,6 +115,7 @@ const panelNav: Array<{ grupo: string; items: ItemNav[] }> = [
       { to: '/panel/asistencia', label: 'Asistencia', icon: ClipboardList },
       { to: '/panel/entrenadores', label: 'Entrenadores', icon: Dumbbell },
       { to: '/panel/catalogo', label: 'Planes y productos', icon: Boxes, soloDueno: true },
+      { to: '/panel/inventario', label: 'Inventario', icon: Warehouse },
     ],
   },
   {

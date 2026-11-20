@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeftRight, Plus, X } from 'lucide-react';
+import { ArrowLeftRight, DatabaseBackup, Download, Plus, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useConfigPublica } from '../../components/TasaWidget';
 import { cx, Field, Loading, Modal, PageHeader, Toggle } from '../../components/ui';
-import { api } from '../../lib/api';
+import { api, descargar } from '../../lib/api';
 import { fechaHora } from '../../lib/format';
 import { INFO, leerMonto, MONEDAS, textoTablero, type Moneda } from '../../lib/monedas';
 import type { MetodoPago } from '../../lib/types';
@@ -183,6 +183,7 @@ export default function Ajustes() {
               ))}
             </div>
           </div>
+          <Respaldos />
         </div>
       </div>
       {nuevoMetodo && <NuevoMetodo onClose={() => setNuevoMetodo(false)} onDone={recargar} />}
@@ -276,6 +277,52 @@ function CategoriasEditor({ valor, onGuardar }: { valor: Config['categorias']; o
           Guardar categorías
         </button>
       </div>
+    </div>
+  );
+}
+
+/** Respaldos de la base de datos: uno automático cada noche y uno al instante cuando quieras. */
+function Respaldos() {
+  const qc = useQueryClient();
+  const { data } = useQuery({ queryKey: ['respaldos'], queryFn: () => api<Array<{ nombre: string; bytes: number; creadoEn: string; automatico: boolean }>>('/respaldos') });
+  const hacer = useMutation({
+    mutationFn: () => api<{ nombre: string; filas: number }>('/respaldos', { body: {} }),
+    onSuccess: async (r) => {
+      toast.success(`Respaldo listo: ${r.filas.toLocaleString('es-VE')} registros`);
+      void qc.invalidateQueries({ queryKey: ['respaldos'] });
+      await descargar(`/respaldos/${r.nombre}`, {}, r.nombre).catch((e: Error) => toast.error(e.message));
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const kb = (b: number) => (b > 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
+  const ultimo = data?.[0];
+  const viejo = !ultimo || Date.now() - new Date(ultimo.creadoEn).getTime() > 36 * 3600_000;
+  return (
+    <div className="card p-6">
+      <div className="mb-1 flex items-center justify-between gap-3">
+        <p className="flex items-center gap-2 font-display text-lg font-extrabold text-white">
+          <DatabaseBackup className="h-5 w-5 text-flame-500" /> Respaldos
+        </p>
+        <button className="btn-primary btn-sm" disabled={hacer.isPending} onClick={() => hacer.mutate()}>
+          <Download className="h-4 w-4" /> {hacer.isPending ? 'Respaldando…' : 'Respaldar y descargar'}
+        </button>
+      </div>
+      <p className="mb-4 text-sm text-steel-400">Todas las noches (3:00 a. m.) se guarda una copia completa de la base de datos y se conservan las últimas 14. Descarga una de vez en cuando y guárdala fuera del servidor (pendrive, Google Drive).</p>
+      {viejo && <p className="mb-3 rounded-xl border border-warn/30 bg-warn/[0.07] p-3 text-sm text-warn">{ultimo ? `El último respaldo es de ${fechaHora(ultimo.creadoEn)}.` : 'Todavía no hay respaldos.'} Haz uno ahora.</p>}
+      <div className="max-h-64 space-y-1 overflow-y-auto">
+        {(data ?? []).map((r) => (
+          <button key={r.nombre} className="flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-white/[0.04]" onClick={() => void descargar(`/respaldos/${r.nombre}`, {}, r.nombre).catch((e: Error) => toast.error(e.message))}>
+            <Download className="h-3.5 w-3.5 text-steel-500" />
+            <span className="flex-1 text-steel-300">{fechaHora(r.creadoEn)}</span>
+            <span className="text-xs text-steel-500">
+              {r.automatico ? 'automático' : 'manual'} · {kb(r.bytes)}
+            </span>
+          </button>
+        ))}
+      </div>
+      <p className="mt-3 text-[11px] text-steel-600">
+        Para restaurar uno (reemplaza todo lo actual): <code className="font-mono text-steel-400">npm run db:restaurar -- archivo.json.gz --si</code>
+      </p>
     </div>
   );
 }

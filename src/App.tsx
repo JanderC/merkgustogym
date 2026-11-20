@@ -6,9 +6,11 @@ import { useAuth } from './lib/auth';
 import EntrenadoresKiosko from './pages/cajero/Entrenadores';
 import EntrenadoresAdmin from './pages/dueno/Entrenadores';
 import Finanzas from './pages/dueno/Finanzas';
+import Inventario from './pages/dueno/Inventario';
 import TasasPage from './pages/dueno/Tasas';
 import Login from './pages/Login';
 import Pantalla from './pages/Pantalla';
+import Portal from './pages/Portal';
 import Cobrar from './pages/cajero/Cobrar';
 import Entradas from './pages/cajero/Entradas';
 import MiTurno from './pages/cajero/MiTurno';
@@ -47,6 +49,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      {/* Enlace personal del cliente: sin sesión */}
+      <Route path="/socio/:token" element={<Portal />} />
       <Route
         path="/pantalla"
         element={
@@ -92,6 +96,7 @@ export default function App() {
         <Route path="tasas" element={<TasasPage />} />
         <Route path="entrenadores" element={<EntrenadoresAdmin />} />
         <Route path="catalogo" element={<Protegido roles={DUENO}><Catalogo /></Protegido>} />
+        <Route path="inventario" element={<Protegido roles={GESTION}><Inventario /></Protegido>} />
         <Route path="equipo" element={<Protegido roles={DUENO}><Equipo /></Protegido>} />
         <Route path="whatsapp" element={<Protegido roles={DUENO}><WhatsApp /></Protegido>} />
         <Route path="biometrico" element={<Protegido roles={DUENO}><Biometrico /></Protegido>} />

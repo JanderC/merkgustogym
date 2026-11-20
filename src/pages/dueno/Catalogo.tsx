@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Archive, PackagePlus, Pencil, Plus, RotateCcw, ScanBarcode, Snowflake, Trash2, Users } from 'lucide-react';
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Precio } from '../../components/PanelPago';
 import { PlanClientesModal } from '../../components/PlanClientes';
@@ -289,24 +290,39 @@ function ProductoModal({ prod, onClose }: { prod: Partial<Producto> | null; onCl
 
 function EntradaStock({ prod, onClose }: { prod: Producto; onClose: () => void }) {
   const qc = useQueryClient();
-  const [cantidad, setCantidad] = useState(12);
+  const [cantidad, setCantidad] = useState(-1);
+  const [motivo, setMotivo] = useState('');
   const m = useMutation({
-    mutationFn: () => api(`/productos/${prod.id}/entrada`, { body: { cantidad } }),
+    mutationFn: () => api(`/productos/${prod.id}/entrada`, { body: { cantidad, motivo: motivo.trim() || null } }),
     onSuccess: () => {
-      toast.success(`Stock actualizado: ${prod.nombre}`);
-      void qc.invalidateQueries({ queryKey: ['productos'] });
-      void qc.invalidateQueries({ queryKey: ['catalogo'] });
+      toast.success(`Stock ajustado: ${prod.nombre}`, { description: 'Quedó registrado en Inventario › Movimientos' });
+      ['productos', 'catalogo', 'kardex', 'inventario-resumen'].forEach((k) => void qc.invalidateQueries({ queryKey: [k] }));
       onClose();
     },
     onError: (e: Error) => toast.error(e.message),
   });
   return (
-    <Modal title={`Mercancía: ${prod.nombre}`} size="sm" onClose={onClose} footer={<button className="btn-primary" onClick={() => m.mutate()}>Aplicar</button>}>
-      <p className="mb-4 text-sm text-steel-400">
-        Stock actual: <b className="text-white">{prod.stock}</b>. Usa un número negativo para descontar merma.
+    <Modal
+      title={`Ajustar: ${prod.nombre}`}
+      size="sm"
+      onClose={onClose}
+      footer={
+        <button className="btn-primary" disabled={!cantidad || motivo.trim().length < 3 || m.isPending} onClick={() => m.mutate()}>
+          Aplicar
+        </button>
+      }
+    >
+      <p className="mb-4 rounded-xl border border-flame-500/20 bg-flame-500/[0.05] p-3 text-sm text-steel-300">
+        ¿Llegó mercancía? Regístrala en <Link to="/panel/inventario" className="font-bold text-flame-400">Inventario › Compras</Link> para que quede su costo y el proveedor. Aquí solo ajustes (merma, rotura, consumo interno).
       </p>
-      <Field label="Unidades que entran">
+      <p className="mb-4 text-sm text-steel-400">
+        Stock actual: <b className="text-white">{prod.stock}</b>. Negativo descuenta, positivo suma.
+      </p>
+      <Field label="Unidades">
         <NumInput className="text-lg" value={cantidad} min={-100000} max={100000} onChange={setCantidad} />
+      </Field>
+      <Field label="Motivo" className="mt-3">
+        <input className="input" value={motivo} maxLength={150} onChange={(e) => setMotivo(e.target.value)} placeholder="Ej. se rompió una botella" />
       </Field>
       <p className="mt-3 text-sm text-steel-500">Quedará en {prod.stock + cantidad}</p>
     </Modal>
@@ -325,14 +341,13 @@ export default function Catalogo() {
   const [buscarProd, setBuscarProd] = useState('');
   const qp = buscarProd.trim().toLowerCase();
   const listaProd = (productos.data ?? []).filter((p) => !qp || p.nombre.toLowerCase().includes(qp) || p.categoria.toLowerCase().includes(qp) || (p.codigoBarras ?? '').toLowerCase() === qp);
-  // Pistola en el buscador: si el código existe abre la entrada de mercancía; si no, crea el producto con ese código
+  // Pistola en el buscador: si el código existe abre el producto; si no, crea el producto con ese código
   const escanearProd = () => {
     const c = buscarProd.trim();
     if (!c) return;
     const p = productos.data?.find((x) => x.codigoBarras && x.codigoBarras.toLowerCase() === c.toLowerCase());
     if (p) {
-      if (p.controlaStock) setStock(p);
-      else setProd(p);
+      setProd(p);
       setBuscarProd('');
     } else if (/^[0-9A-Za-z._-]{4,40}$/.test(c) && listaProd.length === 0) {
       setProd({ codigoBarras: c });
@@ -469,7 +484,7 @@ export default function Catalogo() {
                       <div className="flex justify-end gap-1">
                         {p.controlaStock && (
                           <button className="btn-ghost btn-sm" onClick={() => setStock(p)}>
-                            <PackagePlus className="h-4 w-4" /> Entrada
+                            <PackagePlus className="h-4 w-4" /> Ajustar
                           </button>
                         )}
                         <button className="rounded-lg p-2 text-steel-500 hover:text-white" onClick={() => setProd(p)}>

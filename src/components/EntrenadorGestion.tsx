@@ -26,6 +26,7 @@ import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { fechaHora, hoyISO, hora, sumarDias } from '../lib/format';
 import type { BioEstado, EntrenadorHoy, Horario, TipoMarcacion } from '../lib/types';
+import { INFO, leerMonto, MONEDAS, type Moneda } from '../lib/monedas';
 import { EntrenadorAvatar, EstadoEntrenador, fotoEntrenadorUrl } from './entrenadores';
 import { FotoCaptura } from './FotoCaptura';
 import { BioBadge, cx, Drawer, Field, Loading, Modal, Tabs, Toggle } from './ui';
@@ -43,7 +44,17 @@ export interface Entrenador {
   bioEstado: BioEstado;
   bioError: string | null;
   tieneFoto: boolean;
+  pagoTipo?: PagoTipo;
+  pagoTarifa?: number;
+  pagoMoneda?: Moneda;
 }
+export type PagoTipo = 'ninguno' | 'fijo' | 'por_hora' | 'por_clase';
+export const TIPOS_PAGO: Array<{ value: PagoTipo; label: string; unidad: string }> = [
+  { value: 'ninguno', label: 'Sin configurar', unidad: '' },
+  { value: 'fijo', label: 'Fijo', unidad: 'por periodo' },
+  { value: 'por_hora', label: 'Por hora', unidad: 'por hora marcada' },
+  { value: 'por_clase', label: 'Por clase', unidad: 'por clase dictada' },
+];
 export interface Marcacion {
   id: number;
   tipo: TipoMarcacion;
@@ -144,6 +155,9 @@ export function EntrenadorEditor({ e, onClose, onGuardado }: { e: Entrenador | n
     especialidad: e?.especialidad ?? '',
     activo: e?.activo ?? true,
     pin: '',
+    pagoTipo: (e?.pagoTipo ?? 'ninguno') as PagoTipo,
+    pagoTarifa: e?.pagoTarifa ? String(Number(e.pagoTarifa)) : '',
+    pagoMoneda: (e?.pagoMoneda ?? 'USD') as Moneda,
   });
   const [verPin, setVerPin] = useState(nuevo);
   const [horario, setHorario] = useState<Horario>(e?.horario ?? { '1': { entrada: '06:00', salida: '14:00' }, '2': { entrada: '06:00', salida: '14:00' }, '3': { entrada: '06:00', salida: '14:00' }, '4': { entrada: '06:00', salida: '14:00' }, '5': { entrada: '06:00', salida: '14:00' } });
@@ -161,6 +175,9 @@ export function EntrenadorEditor({ e, onClose, onGuardado }: { e: Entrenador | n
         activo: f.activo,
         horario,
         pin: f.pin || undefined,
+        pagoTipo: f.pagoTipo,
+        pagoTarifa: f.pagoTipo === 'ninguno' ? 0 : leerMonto(f.pagoTarifa),
+        pagoMoneda: f.pagoMoneda,
         ...(foto !== undefined && { foto }),
       };
       return e ? api<{ ok: true }>(`/entrenadores/${e.id}`, { method: 'PUT', body }).then(() => ({ id: e.id, codigo: e.codigo })) : api<{ id: string; codigo: number }>('/entrenadores', { body });
@@ -286,6 +303,18 @@ export function EntrenadorEditor({ e, onClose, onGuardado }: { e: Entrenador | n
               </button>
             </div>
             {f.pin && !/^\d{4,6}$/.test(f.pin) && <p className="mt-2 text-xs text-warn">El PIN debe tener de 4 a 6 números</p>}
+          </div>
+          <div className="rounded-2xl border border-white/[0.06] p-4 sm:col-span-2">
+            <p className="font-display font-extrabold text-white">Cómo se le paga</p>
+            <p className="mb-3 text-xs text-steel-400">El sistema calcula lo que le toca en Entrenadores › Pagos con sus horas marcadas o sus clases dictadas.</p>
+            <Tabs value={f.pagoTipo} onChange={(v) => setF({ ...f, pagoTipo: v })} items={TIPOS_PAGO.map((t) => ({ value: t.value, label: t.label }))} />
+            {f.pagoTipo !== 'ninguno' && (
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <input className="input tnum w-40" inputMode="decimal" placeholder="Monto" value={f.pagoTarifa} onChange={(ev) => setF({ ...f, pagoTarifa: ev.target.value })} />
+                <Tabs value={f.pagoMoneda} onChange={(v) => setF({ ...f, pagoMoneda: v })} items={MONEDAS.map((x) => ({ value: x, label: INFO[x].simbolo }))} />
+                <span className="text-sm text-steel-400">{TIPOS_PAGO.find((t) => t.value === f.pagoTipo)?.unidad}</span>
+              </div>
+            )}
           </div>
           {!nuevo && (
             <div className="sm:col-span-2">

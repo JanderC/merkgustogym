@@ -14,7 +14,7 @@ import { archivoUrl } from './Cierres';
 
 interface Resumen {
   monedaRef: Moneda;
-  totales: { vendido: number; cobrado: number; fiado: number; abonosCobrados: number; otrosIngresos: number; egresos: number; costoVendido: number; utilidad: number; operaciones: number };
+  totales: { vendido: number; cobrado: number; fiado: number; abonosCobrados: number; otrosIngresos: number; egresos: number; costoVendido: number; comprasInventario?: number; utilidad: number; operaciones: number };
   flujo: Array<{ moneda: Moneda; ventas: number; ingresos: number; egresos: number; neto: number }>;
   porMetodo: Array<{ nombre: string; moneda: Moneda; montoMoneda: number; montoRef: number; n: number }>;
   categorias: Array<{ tipo: 'ingreso' | 'egreso'; categoria: string; montoRef: number; n: number }>;
@@ -109,7 +109,12 @@ export default function Finanzas() {
         <>
           <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
             <Stat accent label="Cobrado" value={money(r.totales.cobrado)} icon={<Wallet className="h-5 w-5" />} hint={`Vendido ${money(r.totales.vendido)} · ${r.totales.operaciones} venta(s)`} />
-            <Stat label="Gastos" value={money(r.totales.egresos)} icon={<ArrowUpCircle className="h-5 w-5" />} hint={`Otros ingresos ${money(r.totales.otrosIngresos)}`} />
+            <Stat
+              label="Gastos"
+              value={money(r.totales.egresos - (r.totales.comprasInventario ?? 0))}
+              icon={<ArrowUpCircle className="h-5 w-5" />}
+              hint={`${r.totales.comprasInventario ? `Compras de mercancía ${money(r.totales.comprasInventario)} (van al inventario) · ` : ''}Otros ingresos ${money(r.totales.otrosIngresos)}`}
+            />
             <Stat label="Utilidad" value={<span className={r.totales.utilidad < 0 ? 'text-bad' : ''}>{money(r.totales.utilidad)}</span>} icon={<TrendingUp className="h-5 w-5" />} hint={`Costo de productos ${money(r.totales.costoVendido)}`} />
             <Stat label="Por cobrar" value={money(r.porCobrar.saldo)} icon={<HandCoins className="h-5 w-5" />} hint={`${r.porCobrar.clientes} cliente(s) · abonado en el periodo ${money(r.totales.abonosCobrados)}`} />
           </div>

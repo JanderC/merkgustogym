@@ -3,18 +3,19 @@ import { Ban, Camera, Check, FileText, ScanFace, X } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { EquipoEntrenadores, tipoCls, type FilaReporte, type Marcacion, type Permiso } from '../../components/EntrenadorGestion';
+import { NominaEntrenadores } from '../../components/NominaEntrenadores';
 import { cx, Empty, Field, Loading, Modal, PageHeader, Tabs } from '../../components/ui';
 import { api } from '../../lib/api';
 import { fecha, fechaHora, hoyISO, sumarDias } from '../../lib/format';
 import { archivoUrl } from './Cierres';
 
 export default function EntrenadoresAdmin() {
-  const [tab, setTab] = useState<'equipo' | 'marcaciones' | 'permisos' | 'reporte'>('equipo');
+  const [tab, setTab] = useState<'equipo' | 'marcaciones' | 'permisos' | 'reporte' | 'pagos'>('equipo');
   const { data: pendientes } = useQuery({ queryKey: ['permisos', 'pendiente'], queryFn: () => api<Permiso[]>('/entrenadores/permisos', { query: { estado: 'pendiente' } }), refetchInterval: 30_000 });
   return (
     <div>
       <PageHeader title="Entrenadores" kicker="Personal">
-        Regístralos aquí mismo. Entradas, salidas, retiros y permisos con foto; tardanzas y horas según el horario de cada uno.
+        Regístralos aquí mismo. Entradas, salidas, retiros y permisos con foto; tardanzas, horas y su pago según el horario y las clases de cada uno.
       </PageHeader>
       <div className="mb-5 overflow-x-auto">
         <Tabs
@@ -25,6 +26,7 @@ export default function EntrenadoresAdmin() {
             { value: 'marcaciones', label: 'Marcaciones' },
             { value: 'permisos', label: `Permisos${pendientes?.length ? ` (${pendientes.length})` : ''}` },
             { value: 'reporte', label: 'Reporte' },
+            { value: 'pagos', label: 'Pagos' },
           ]}
         />
       </div>
@@ -32,6 +34,7 @@ export default function EntrenadoresAdmin() {
       {tab === 'marcaciones' && <Marcaciones />}
       {tab === 'permisos' && <Permisos />}
       {tab === 'reporte' && <Reporte />}
+      {tab === 'pagos' && <NominaEntrenadores />}
     </div>
   );
 }

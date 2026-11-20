@@ -10,6 +10,7 @@ import { fmt } from '../lib/monedas';
 import type { SocioDetalle, SocioLista } from '../lib/types';
 import { DatosRapidos, datosOk, EstadoLector } from './ClienteNuevo';
 import { FotoCaptura } from './FotoCaptura';
+import { ProgresoSocio } from './Progreso';
 import { Avatar, BioBadge, cx, Drawer, Field, Loading, Modal, NumInput, VigenciaBadge } from './ui';
 
 // ── Formulario alta/edición ──────────────────────────────────────────
@@ -388,6 +389,8 @@ export function SocioDrawer({ socioId, onClose, onCobrar }: { socioId: string; o
             </div>
           </>
         )}
+
+        <ProgresoSocio socioId={s.id} nombre={s.nombre} telefono={s.telefono} />
 
         <h4 className="label mt-7">Últimas entradas</h4>
         <div className="space-y-1.5">
