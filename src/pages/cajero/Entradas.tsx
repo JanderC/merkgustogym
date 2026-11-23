@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CircleCheck, CircleX, Hand, ScanFace, TriangleAlert } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
+import { AbrirPuerta } from '../../components/AbrirPuerta';
 import { SocioPicker } from '../../components/socios';
 import { Avatar, cx, Empty, PageHeader } from '../../components/ui';
 import { api } from '../../lib/api';
@@ -60,7 +61,7 @@ export default function Entradas() {
   const r = data?.resumen;
   return (
     <div>
-      <PageHeader title="Entradas de hoy" kicker="Control de acceso">
+      <PageHeader title="Entradas de hoy" kicker="Control de acceso" actions={<AbrirPuerta />}>
         El lector facial registra solo. Usa el registro manual si alguien no tiene rostro cargado o el lector falla.
       </PageHeader>
       <div className="grid gap-6 lg:grid-cols-[1fr_1.1fr]">

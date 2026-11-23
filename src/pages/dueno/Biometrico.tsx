@@ -20,6 +20,7 @@ interface Estado {
   webhook: { path: string; publicUrlConfigurada: boolean; ipsPermitidas: string[]; macsPermitidas: string[]; rechazos: number; ultimoEvento: { at: string; ip: string; resultado: string } | null };
   cola: Array<{ estado: string; n: number }>;
   decision: 'servidor' | 'lector';
+  puente: { conectado: boolean; ultimaSenal: string | null } | null;
   simulador: { desconectado: boolean; usuarios: number; verificacionRemota: boolean } | null;
 }
 interface ItemCola {
@@ -69,7 +70,7 @@ export default function Biometrico() {
       onError: (e: Error) => toast.error(e.message),
     }) as const;
   const reintentar = useMutation(mut(() => api<{ reencoladas: number }>('/biometric/cola/reintentar', { body: {} }), (r) => `${r.reencoladas} operación(es) reenviadas`));
-  const syncTotal = useMutation(mut(() => api<{ encolados: number }>('/biometric/sync-total', { body: {} }), (r) => `${r.encolados} cliente(s) en cola de sincronización`));
+  const syncTotal = useMutation(mut(() => api<{ encolados: number; omitidosSinPlan: number }>('/biometric/sync-total', { body: {} }), (r) => `${r.encolados} en cola · ${r.omitidosSinPlan} sin plan (entran al renovar)`));
   const listener = useMutation(mut(() => api<{ url: string }>('/biometric/listener', { body: {} }), (r) => `Lector configurado → ${r.url}`));
   const conexion = useMutation({
     mutationFn: (desconectado: boolean) => api('/biometric/simulador/conexion', { body: { desconectado } }),
@@ -93,7 +94,7 @@ export default function Biometrico() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Lector facial" kicker="Hikvision DS-K1T344 · MinMoe">
+      <PageHeader title="Lector facial" kicker="Hikvision DS-K1T321MFWX · MinMoe">
         Las fichas y vigencias se envían solas al lector. Si pierde conexión, todo queda en cola y se reenvía al volver.
       </PageHeader>
 
@@ -111,18 +112,27 @@ export default function Biometrico() {
               <p className="text-xs text-steel-500">
                 {st.latencyMs !== null && `${st.latencyMs} ms · `}último OK {hace(st.lastOkAt)} {st.device?.macAddress && `· MAC ${st.device.macAddress}`}
               </p>
+              {st.puente && (
+                <p className={cx('mt-2 text-xs font-bold', st.puente.conectado ? 'text-ok' : 'text-bad')}>
+                  {st.puente.conectado ? 'Puente del gimnasio conectado' : 'Puente del gimnasio desconectado: abre PUENTE.bat en la PC del gimnasio'}
+                </p>
+              )}
               {st.lastError && <p className="mt-2 text-xs text-bad">{st.lastError}</p>}
             </div>
             <div className="flex flex-wrap gap-2">
               <button className="btn-ghost btn-sm" onClick={() => syncTotal.mutate()} disabled={syncTotal.isPending}>
                 <RefreshCw className="h-4 w-4" /> Sincronizar todos
               </button>
+              {!st.puente && (
+              <>
               <button className="btn-ghost btn-sm" onClick={() => remota.mutate(st.decision === 'servidor')} disabled={remota.isPending} title="Configura en el lector la verificación remota (ISAPI AcsCfg)">
                 <ShieldCheck className="h-4 w-4" /> {st.decision === 'servidor' ? 'Activar verificación remota' : 'Lector decide solo'}
               </button>
               <button className="btn-ghost btn-sm" onClick={() => listener.mutate()} disabled={listener.isPending}>
                 <Cable className="h-4 w-4" /> Configurar webhook
               </button>
+              </>
+              )}
             </div>
           </div>
           <div className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -168,7 +178,7 @@ export default function Biometrico() {
               <p className="flex items-center gap-2 font-wide text-lg text-white">
                 <FlaskConical className="h-5 w-5 text-warn" /> Simulador del lector
               </p>
-              <p className="text-sm text-steel-400">Prueba el flujo completo sin el equipo: genera el mismo evento que enviaría el DS-K1T344.</p>
+              <p className="text-sm text-steel-400">Prueba el flujo completo sin el equipo: genera el mismo evento que enviaría el lector.</p>
               <p className="mt-1 text-xs text-steel-500">
                 Modo: {st.simulador?.verificacionRemota ? 'el lector pregunta y el SISTEMA decide si abre' : 'el lector decide con la vigencia sincronizada'}
               </p>
