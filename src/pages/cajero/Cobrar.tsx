@@ -3,6 +3,7 @@ import { ArrowDownCircle, ArrowUpCircle, CalendarCheck, CheckCircle2, HandCoins,
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
+import { AbrirPuerta } from '../../components/AbrirPuerta';
 import { ClienteNuevo, EstadoLector, type VentaHecha } from '../../components/ClienteNuevo';
 import { DevolucionModal } from '../../components/Devolucion';
 import { PanelPago, Precio, type PagoPayload } from '../../components/PanelPago';
@@ -264,6 +265,7 @@ export default function Cobrar() {
             <button className="btn-ghost btn-sm" onClick={() => setDevolucion(true)} title="Requiere el código del supervisor">
               <Undo2 className="h-4 w-4 text-sky-300" /> Devolución
             </button>
+            <AbrirPuerta />
             <Link to="/mostrador/turno" className="btn-ghost btn-sm">
               <Receipt className="h-4 w-4" /> Mi turno
             </Link>
