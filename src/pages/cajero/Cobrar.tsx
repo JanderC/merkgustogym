@@ -10,7 +10,7 @@ import { PanelPago, Precio, type PagoPayload } from '../../components/PanelPago'
 import { SocioPicker } from '../../components/socios';
 import { Avatar, cx, Empty, Loading, Modal, Tabs } from '../../components/ui';
 import { api } from '../../lib/api';
-import { duracion, fecha } from '../../lib/format';
+import { duracion, fecha, fechaDia, finPlan, hoyISO, sumarDias } from '../../lib/format';
 import { MovimientoModal } from './MiTurno';
 import { useCatalogo, useTurno } from '../../lib/hooks';
 import { fmt, type Moneda } from '../../lib/monedas';
@@ -505,6 +505,20 @@ export default function Cobrar() {
                     )}
                   </div>
                   {l.acompanantes && l.acompanantes.length > 0 && <p className="ml-8 mt-1 text-xs text-steel-400">+ {l.acompanantes.map((a) => a.nombre).join(', ')}</p>}
+                  {l.tipo === 'membresia' &&
+                    (() => {
+                      const p = cat?.planes.find((x) => x.id === l.id);
+                      if (!p) return null;
+                      const hasta = ficha?.vigencia.hasta;
+                      const sigue = l.desde !== 'hoy' && !!hasta && hasta >= hoyISO();
+                      const fin = sigue ? finPlan(p, sumarDias(hasta!, 1), hasta) : finPlan(p, hoyISO());
+                      return (
+                        <p className="ml-8 mt-1 text-xs font-bold text-flame-300">
+                          Vence el {fechaDia(fin)}
+                          {p.tipoDuracion !== 'dias' && <span className="font-normal text-steel-500"> · paga el mismo día</span>}
+                        </p>
+                      );
+                    })()}
                   {l.tipo === 'membresia' && vigente && (
                     <div className="ml-8 mt-2 inline-flex rounded-lg bg-ink-950/60 p-0.5 text-[11px] font-bold">
                       {(['continuar', 'hoy'] as const).map((d) => (
@@ -591,7 +605,7 @@ export default function Cobrar() {
           {exito.membresias.map((m, i) => (
             <p key={i} className="mt-3 rounded-xl border border-ok/20 bg-ok/[0.06] p-3 text-center text-sm text-ok">
               {m.plan}
-              {m.personas > 1 && ` (${m.personas} personas)`}: del {fecha(m.fechaInicio)} al {fecha(m.fechaFin)}
+              {m.personas > 1 && ` (${m.personas} personas)`}: del {fecha(m.fechaInicio)} al {fechaDia(m.fechaFin)}
             </p>
           ))}
           {exito.membresias.length > 0 && exito.cliente && (

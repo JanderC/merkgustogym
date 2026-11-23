@@ -19,6 +19,34 @@ export const fecha = (iso: string | null | undefined) => {
   const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
   return new Date(y!, m! - 1, d!).toLocaleDateString('es-VE', { day: '2-digit', month: 'short', year: 'numeric' });
 };
+/** "lunes 30 nov": para que el cliente sepa qué día le toca volver a pagar. */
+export const fechaDia = (iso: string | null | undefined) => {
+  if (!iso) return '—';
+  const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
+  return new Date(y!, m! - 1, d!).toLocaleDateString('es-VE', { weekday: 'long', day: 'numeric', month: 'short' });
+};
+
+const sumarMeses = (iso: string, n: number) => {
+  const [y, m, d] = iso.split('-').map(Number);
+  const t = y! * 12 + (m! - 1) + n;
+  const ny = Math.floor(t / 12);
+  const nm = t % 12;
+  const ultimo = new Date(ny, nm + 1, 0).getDate();
+  return `${ny}-${pad(nm + 1)}-${pad(Math.min(d!, ultimo))}`;
+};
+
+/**
+ * Vencimiento de un plan, igual que el servidor: semanas, meses y años de día a día
+ * (lunes 23 → lunes 30; 23 nov → 23 dic). Si renueva continuando, desde el vencimiento anterior.
+ */
+export function finPlan(p: { tipoDuracion: 'dias' | 'semanas' | 'meses' | 'anios'; cantidad: number }, inicio: string, ancla?: string | null) {
+  const base = ancla ?? inicio;
+  if (p.tipoDuracion === 'semanas') return sumarDias(base, p.cantidad * 7);
+  if (p.tipoDuracion === 'meses') return sumarMeses(base, p.cantidad);
+  if (p.tipoDuracion === 'anios') return sumarMeses(base, p.cantidad * 12);
+  return sumarDias(inicio, p.cantidad - 1);
+}
+
 export const fechaCorta = (iso: string) => {
   const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
   return new Date(y!, m! - 1, d!).toLocaleDateString('es-VE', { day: 'numeric', month: 'short' });

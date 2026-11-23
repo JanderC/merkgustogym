@@ -10,7 +10,7 @@ import { ArrowLeft, ArrowRight, Camera, CheckCircle2, Loader2, Power, ScanFace, 
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
-import { fecha, hoyISO, sumarDias } from '../lib/format';
+import { fecha, fechaDia, finPlan, hoyISO, sumarDias } from '../lib/format';
 import type { Moneda } from '../lib/monedas';
 import { useCatalogo, useTurno } from '../lib/hooks';
 import type { Plan, SocioDetalle } from '../lib/types';
@@ -317,6 +317,7 @@ export function ClienteNuevo({ onClose, nombreInicial = '' }: { onClose: () => v
               <Field label="La mensualidad empieza el" hint={inicio === hoyISO() ? 'Hoy. Si se inscribió días antes, pon ese día.' : `Cuenta desde el ${fecha(inicio)}, no desde hoy.`}>
                 <input type="date" className="input" value={inicio} min={sumarDias(hoyISO(), -30)} max={hoyISO()} onChange={(e) => setInicio(e.target.value || hoyISO())} />
               </Field>
+              <p className="mt-2 text-sm font-bold text-flame-300">Vence el {fechaDia(finPlan(plan, inicio))}</p>
             </div>
             <div className="rounded-2xl border border-white/[0.06] p-4">
               <p className="label">Total</p>
@@ -358,7 +359,7 @@ export function ClienteNuevo({ onClose, nombreInicial = '' }: { onClose: () => v
           <p className="text-steel-400">Cliente #{cliente.codigo}</p>
           {venta?.membresias[0] && (
             <p className="mx-auto mt-4 max-w-md rounded-xl border border-ok/25 bg-ok/[0.07] p-3 text-sm text-ok">
-              Plan {plan?.nombre} activo del {fecha(venta.membresias[0].fechaInicio)} al {fecha(venta.membresias[0].fechaFin)}
+              Plan {plan?.nombre} activo del {fecha(venta.membresias[0].fechaInicio)} al {fechaDia(venta.membresias[0].fechaFin)}
             </p>
           )}
           {venta?.deuda && <p className="mx-auto mt-3 max-w-md rounded-xl border border-warn/30 bg-warn/[0.07] p-3 text-sm text-warn">Quedó debiendo {venta.deuda.texto}</p>}
