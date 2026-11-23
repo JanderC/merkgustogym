@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CircleCheck, CircleX, Hand, ScanFace, TriangleAlert } from 'lucide-react';
+import { CircleCheck, CircleX, DoorOpen, Hand, ScanFace, TriangleAlert } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { AbrirPuerta } from '../../components/AbrirPuerta';
@@ -57,6 +57,12 @@ export default function Entradas() {
     },
     onError: (e: Error) => toast.error(e.message),
   });
+  // Quien entra por recepción (pase diario / rutina): un toque abre la puerta
+  const abrir = useMutation({
+    mutationFn: (socioId: string) => api('/lector/abrir-puerta', { body: { socioId } }),
+    onSuccess: () => toast.success('Puerta abierta'),
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   const r = data?.resumen;
   return (
@@ -82,6 +88,11 @@ export default function Entradas() {
                   <p className="text-sm text-steel-400">{ultimo.motivo}</p>
                   {ultimo.resultado === 'permitido' && ultimo.vigencia?.hasta && <p className="text-xs text-steel-500">Vigente hasta el {fecha(ultimo.vigencia.hasta)}</p>}
                 </div>
+                {ultimo.resultado === 'permitido' && ultimo.socio && (
+                  <button className="btn-primary btn-xl shrink-0" disabled={abrir.isPending} onClick={() => abrir.mutate(ultimo.socio!.id)}>
+                    <DoorOpen className="h-5 w-5" /> {abrir.isPending ? 'Abriendo…' : 'Abrir puerta'}
+                  </button>
+                )}
               </div>
             )}
           </div>
