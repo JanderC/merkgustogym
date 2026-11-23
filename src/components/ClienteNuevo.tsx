@@ -10,7 +10,7 @@ import { ArrowLeft, ArrowRight, Camera, CheckCircle2, Loader2, Power, ScanFace, 
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
-import { fecha } from '../lib/format';
+import { fecha, hoyISO, sumarDias } from '../lib/format';
 import type { Moneda } from '../lib/monedas';
 import { useCatalogo, useTurno } from '../lib/hooks';
 import type { Plan, SocioDetalle } from '../lib/types';
@@ -121,6 +121,8 @@ export function ClienteNuevo({ onClose, nombreInicial = '' }: { onClose: () => v
   const [sinFoto, setSinFoto] = useState(false);
   const [cliente, setCliente] = useState<{ id: string; codigo: number } | null>(null);
   const [plan, setPlan] = useState<Plan | null>(null);
+  // Si se inscribió días antes, la mensualidad cuenta desde ese día
+  const [inicio, setInicio] = useState(hoyISO());
   const [acomp, setAcomp] = useState<Array<{ id: string; nombre: string }>>([]);
   const [venta, setVenta] = useState<VentaHecha | null>(null);
   const set = <K extends keyof Datos>(k: K, v: Datos[K]) => setD((p) => ({ ...p, [k]: v }));
@@ -149,7 +151,7 @@ export function ClienteNuevo({ onClose, nombreInicial = '' }: { onClose: () => v
   });
 
   const cobrar = useMutation({
-    mutationFn: (p: PagoPayload) => api<VentaHecha>('/pos/ventas', { body: { socioId: cliente!.id, items: [{ tipo: 'membresia', id: plan!.id, acompanantes: acomp.map((a) => a.id) }], ...p } }),
+    mutationFn: (p: PagoPayload) => api<VentaHecha>('/pos/ventas', { body: { socioId: cliente!.id, items: [{ tipo: 'membresia', id: plan!.id, acompanantes: acomp.map((a) => a.id), ...(inicio !== hoyISO() && { inicio }) }], ...p } }),
     onSuccess: (v) => {
       setVenta(v);
       ['turno', 'socios', 'socio', 'catalogo'].forEach((k) => void qc.invalidateQueries({ queryKey: [k] }));
@@ -310,6 +312,11 @@ export function ClienteNuevo({ onClose, nombreInicial = '' }: { onClose: () => v
                 </p>
                 {acomp.length > 0 && <p className="text-xs text-steel-500">+ {acomp.map((a) => a.nombre).join(', ')}</p>}
               </div>
+            </div>
+            <div className="rounded-2xl border border-white/[0.06] p-4">
+              <Field label="La mensualidad empieza el" hint={inicio === hoyISO() ? 'Hoy. Si se inscribió días antes, pon ese día.' : `Cuenta desde el ${fecha(inicio)}, no desde hoy.`}>
+                <input type="date" className="input" value={inicio} min={sumarDias(hoyISO(), -30)} max={hoyISO()} onChange={(e) => setInicio(e.target.value || hoyISO())} />
+              </Field>
             </div>
             <div className="rounded-2xl border border-white/[0.06] p-4">
               <p className="label">Total</p>
