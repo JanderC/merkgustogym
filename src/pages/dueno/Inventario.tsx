@@ -5,12 +5,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Ban, Boxes, ClipboardCheck, FileImage, HandCoins, History, PackagePlus, Pencil, Plus, ScanBarcode, Search, Truck, X } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Drawer, Empty, Field, Loading, Modal, NumInput, PageHeader, Stat, Tabs, cx } from '../../components/ui';
 import { api, API, session } from '../../lib/api';
 import { fecha, fechaHora, hace, hoyISO, money, sumarDias } from '../../lib/format';
 import { useCatalogo } from '../../lib/hooks';
-import { fmt, INFO, leerMonto, MONEDAS, redondear, type Moneda } from '../../lib/monedas';
+import { convertir, equivalentes, factor, fmt, INFO, leerMonto, MONEDAS, redondear, tasasDesdeTablero, textoTablero, type Moneda } from '../../lib/monedas';
 import type { Producto } from '../../lib/types';
 
 interface Resumen {
@@ -46,6 +47,7 @@ interface Compra {
   soporteId: number | null;
   creadoEn: string;
   motivoAnulacion: string | null;
+  tasas: { usdCop: number; vesCop: number; fuente?: 'factura' | 'tablero' } | null;
   proveedor: string | null;
   registro: string;
   items: string[];
@@ -68,6 +70,9 @@ const useProveedores = () => useQuery({ queryKey: ['proveedores'], queryFn: () =
 
 export default function Inventario() {
   const [tab, setTab] = useState<'compras' | 'conteo' | 'movimientos' | 'proveedores'>('compras');
+  const [params, setParams] = useSearchParams();
+  // Desde Planes y productos: «Cargar factura» abre directo el formulario (con el código escaneado, si hay)
+  const cargar = params.get('cargar') === '1' ? { codigo: params.get('codigo') ?? undefined } : null;
   const { data: r } = useQuery({ queryKey: ['inventario-resumen'], queryFn: () => api<Resumen>('/inventario/resumen') });
   return (
     <div>
@@ -99,7 +104,7 @@ export default function Inventario() {
           ]}
         />
       </div>
-      {tab === 'compras' && <Compras />}
+      {tab === 'compras' && <Compras inicial={cargar} limpiar={() => setParams({}, { replace: true })} />}
       {tab === 'conteo' && <Conteo />}
       {tab === 'movimientos' && <Movimientos />}
       {tab === 'proveedores' && <Proveedores />}
@@ -111,11 +116,11 @@ const invalidarInventario = (qc: ReturnType<typeof useQueryClient>) => ['compras
 
 // ═════════════ Compras ═════════════
 
-function Compras() {
+function Compras({ inicial, limpiar }: { inicial: { codigo?: string } | null; limpiar: () => void }) {
   const [desde, setDesde] = useState(sumarDias(hoyISO(), -30));
   const [hasta, setHasta] = useState(hoyISO());
   const [pendientes, setPendientes] = useState(false);
-  const [nueva, setNueva] = useState(false);
+  const [nueva, setNueva] = useState<{ codigo?: string } | null>(inicial);
   const [ver, setVer] = useState<Compra | null>(null);
   const { data, isLoading } = useQuery({
     queryKey: ['compras', desde, hasta, pendientes],
@@ -138,15 +143,15 @@ function Compras() {
         <label className="flex cursor-pointer items-center gap-2 pb-3 text-sm font-bold text-steel-300">
           <input type="checkbox" className="h-4 w-4 accent-[#FF8A10]" checked={pendientes} onChange={(e) => setPendientes(e.target.checked)} /> Solo las que se deben
         </label>
-        <button className="btn-primary ml-auto" onClick={() => setNueva(true)}>
-          <Plus className="h-4 w-4" /> Registrar compra
+        <button className="btn-primary ml-auto" onClick={() => setNueva({})}>
+          <Plus className="h-4 w-4" /> Cargar factura
         </button>
       </div>
       <div className="card overflow-hidden">
         {isLoading ? (
           <Loading />
         ) : !data?.length ? (
-          <Empty icon={<Truck className="h-7 w-7" />} title="Sin compras en estas fechas" hint="Registra aquí la mercancía que llega: suma al inventario y calcula el costo real de cada producto." />
+          <Empty icon={<Truck className="h-7 w-7" />} title="Sin compras en estas fechas" hint="Toda mercancía entra por aquí: carga la factura como viene (en $, Bs o pesos), crea los productos nuevos y fija su precio de venta." />
         ) : (
           <div className="overflow-x-auto">
             <table className="table-base">
@@ -194,20 +199,42 @@ function Compras() {
           </div>
         )}
       </div>
-      {nueva && <CompraModal onClose={() => setNueva(false)} />}
+      {nueva && <CompraModal codigoInicial={nueva.codigo} onClose={() => (setNueva(null), limpiar())} />}
       {ver && <CompraDrawer compra={ver} onClose={() => setVer(null)} />}
     </>
   );
 }
 
 interface Linea {
-  productoId: number;
+  key: string;
+  /** Producto existente; vacío si nace con esta factura */
+  productoId?: number;
   nombre: string;
+  nuevo: boolean;
+  categoria: string;
+  codigoBarras: string;
+  /** Moneda en la que se vende (la del producto) */
+  monedaVenta: Moneda;
   cantidad: number;
+  /** Costo unitario en la moneda de la factura, como lo escribe la persona */
   costo: string;
+  /** Precio de venta en la moneda del producto */
+  precio: string;
+  precioActual?: number;
+  stock?: number;
 }
 
-function CompraModal({ onClose }: { onClose: () => void }) {
+const CATEGORIAS = ['Bebidas', 'Suplementos', 'Snacks', 'Lácteos', 'Accesorios', 'Ropa', 'General'];
+const textoNum = (n: number, m: Moneda) => (n ? String(redondear(n, m)).replace('.', ',') : '');
+const MARGENES = [30, 50, 100];
+
+/**
+ * Cargar factura de compra: el único camino por el que entra mercancía.
+ * Se escribe como viene en el papel (en $, Bs o pesos); el sistema convierte
+ * el costo a la moneda de venta con la tasa de la factura, crea los productos
+ * nuevos y deja el precio de venta listo para caja (que cobra en las tres monedas).
+ */
+function CompraModal({ onClose, codigoInicial }: { onClose: () => void; codigoInicial?: string }) {
   const qc = useQueryClient();
   const { data: cat } = useCatalogo();
   const { data: productos } = useProductos();
@@ -216,9 +243,13 @@ function CompraModal({ onClose }: { onClose: () => void }) {
   const [nuevoProv, setNuevoProv] = useState(false);
   const [factura, setFactura] = useState('');
   const [fechaC, setFechaC] = useState(hoyISO());
-  const [moneda, setMoneda] = useState<Moneda>('COP');
-  const [lineas, setLineas] = useState<Linea[]>([]);
+  const [moneda, setMoneda] = useState<Moneda>('USD');
+  const [tasaDolar, setTasaDolar] = useState<string | null>(null);
+  const [tasaBs, setTasaBs] = useState<string | null>(null);
+  const [lineas, setLineas] = useState<Linea[]>(() => (codigoInicial ? [lineaNueva('', codigoInicial)] : []));
+  const [ultima, setUltima] = useState<string | null>(lineas[0]?.key ?? null);
   const [buscar, setBuscar] = useState('');
+  const [totalPapel, setTotalPapel] = useState('');
   const [pagada, setPagada] = useState(true);
   const [metodo, setMetodo] = useState('efectivo');
   const [abono, setAbono] = useState('');
@@ -226,37 +257,92 @@ function CompraModal({ onClose }: { onClose: () => void }) {
   const [soporte, setSoporte] = useState<string | null>(null);
   const buscarRef = useRef<HTMLInputElement>(null);
 
+  // Tasa de la factura: la del día, o la que se escriba si se pagó a otra
+  const dia = cat?.tasas;
+  const dolar = tasaDolar === null ? (dia?.usdCop ?? 0) : leerMonto(tasaDolar);
+  const bs = tasaBs === null ? (dia?.vesCop ?? 0) : leerMonto(tasaBs);
+  const t = dolar > 0 && bs > 0 ? tasasDesdeTablero(dolar, bs) : null;
+  const tasaEditada = !!dia && (dolar !== dia.usdCop || bs !== dia.vesCop);
+  const usaTasa = moneda !== 'COP' || lineas.some((l) => l.monedaVenta !== moneda);
+
   const total = redondear(lineas.reduce((s, l) => s + l.cantidad * leerMonto(l.costo), 0), moneda);
+  const papel = leerMonto(totalPapel);
+  const cuadra = totalPapel.trim() !== '' && redondear(papel, moneda) === total;
   const metodos = (cat?.metodos ?? []).filter((m) => m.monedas.includes(moneda));
   const metodoOk = metodos.some((m) => m.codigo === metodo) ? metodo : (metodos[0]?.codigo ?? 'efectivo');
+
   const sugeridos = useMemo(() => {
     const q = buscar.trim().toLowerCase();
     if (!q) return [];
-    return (productos ?? []).filter((p) => p.activo !== false && !lineas.some((l) => l.productoId === p.id) && (p.nombre.toLowerCase().includes(q) || p.codigoBarras === buscar.trim())).slice(0, 6);
+    return (productos ?? []).filter((p) => p.activo !== false && p.controlaStock && !lineas.some((l) => l.productoId === p.id) && (p.nombre.toLowerCase().includes(q) || p.codigoBarras === buscar.trim())).slice(0, 6);
   }, [buscar, productos, lineas]);
 
-  const agregar = (p: Producto) => {
-    setLineas((ls) => (ls.some((l) => l.productoId === p.id) ? ls.map((l) => (l.productoId === p.id ? { ...l, cantidad: l.cantidad + 1 } : l)) : [...ls, { productoId: p.id, nombre: p.nombre, cantidad: 1, costo: p.costo && p.moneda === moneda ? String(p.costo) : '' }]));
+  function lineaNueva(nombre: string, codigo = ''): Linea {
+    return { key: `n${Date.now()}${Math.random()}`, nombre, nuevo: true, categoria: 'General', codigoBarras: codigo, monedaVenta: 'COP', cantidad: 1, costo: '', precio: '' };
+  }
+  const poner = (l: Linea) => {
+    setLineas((ls) => [...ls, l]);
+    setUltima(l.key);
     setBuscar('');
-    buscarRef.current?.focus();
   };
+  const agregar = (p: Producto) => {
+    const ya = lineas.find((l) => l.productoId === p.id);
+    if (ya) {
+      setLineas((ls) => ls.map((l) => (l.key === ya.key ? { ...l, cantidad: l.cantidad + 1 } : l)));
+      setBuscar('');
+      return;
+    }
+    poner({ key: `p${p.id}`, productoId: p.id, nombre: p.nombre, nuevo: false, categoria: p.categoria, codigoBarras: p.codigoBarras ?? '', monedaVenta: p.moneda, cantidad: 1, costo: '', precio: textoNum(Number(p.precio), p.moneda), precioActual: Number(p.precio), stock: p.stock });
+  };
+  const crear = () => {
+    const txt = buscar.trim();
+    if (!txt) return;
+    // Lo que sale de la pistola (solo números/letras sin espacios, largo) es un código; lo demás, el nombre
+    poner(/^[0-9]{6,}$/.test(txt) ? lineaNueva('', txt) : lineaNueva(txt));
+  };
+  const cambiar = (key: string, c: Partial<Linea>) => setLineas((ls) => ls.map((x) => (x.key === key ? { ...x, ...c } : x)));
+
+  // Revisión de cada línea: lo que falta o está mal se dice con palabras
+  const revision = lineas.map((l) => {
+    const costoU = leerMonto(l.costo);
+    const costoVenta = t ? convertir(costoU, moneda, l.monedaVenta, t) : 0;
+    const precio = leerMonto(l.precio);
+    let error: string | null = null;
+    if (l.nuevo && l.nombre.trim().length < 2) error = 'Escribe el nombre';
+    else if (l.cantidad < 1) error = 'Cantidad';
+    else if (costoU <= 0) error = 'Escribe el costo de la factura';
+    else if (precio <= 0) error = 'Ponle precio de venta';
+    else if (precio < redondear(costoVenta, l.monedaVenta)) error = 'El precio de venta está por debajo del costo';
+    return { costoU, costoVenta, precio, error, margen: precio > 0 && costoVenta > 0 ? Math.round(((precio - costoVenta) / precio) * 100) : null };
+  });
+  const errores = revision.filter((r) => r.error).length;
 
   const m = useMutation({
     mutationFn: () =>
-      api<{ id: number; totalTexto: string; saldoTexto: string; saldo: number }>('/inventario/compras', {
+      api<{ id: number; totalTexto: string; saldoTexto: string; saldo: number; creados: string[] }>('/inventario/compras', {
         body: {
           proveedorId: proveedorId || null,
-          factura: factura || null,
+          factura: factura.trim() || null,
           fecha: fechaC,
           moneda,
-          items: lineas.map((l) => ({ productoId: l.productoId, cantidad: l.cantidad, costoUnitario: leerMonto(l.costo) })),
+          tasa: tasaEditada ? { dolar, bs } : null,
+          totalFactura: papel,
+          items: lineas.map((l) => ({
+            productoId: l.nuevo ? null : l.productoId,
+            nuevo: l.nuevo ? { nombre: l.nombre.trim(), categoria: l.categoria.trim() || 'General', codigoBarras: l.codigoBarras.trim() || null, moneda: l.monedaVenta } : null,
+            cantidad: l.cantidad,
+            costoUnitario: leerMonto(l.costo),
+            precioVenta: leerMonto(l.precio),
+          })),
           pago: pagada ? { metodo: metodoOk, monto: abono ? leerMonto(abono) : null } : null,
           nota: nota || null,
           soporte,
         },
       }),
     onSuccess: (r) => {
-      toast.success(`Compra #${r.id} registrada: ${r.totalTexto}`, { description: r.saldo > 0 ? `Queda debiendo ${r.saldoTexto} al proveedor` : 'La mercancía ya está en el inventario' });
+      toast.success(`Factura cargada (compra #${r.id}): ${r.totalTexto}`, {
+        description: [r.creados.length ? `Productos nuevos: ${r.creados.join(', ')}` : null, r.saldo > 0 ? `Queda debiendo ${r.saldoTexto} al proveedor` : 'La mercancía ya está en el inventario y a la venta'].filter(Boolean).join(' · '),
+      });
       invalidarInventario(qc);
       onClose();
     },
@@ -270,20 +356,21 @@ function CompraModal({ onClose }: { onClose: () => void }) {
     rd.onload = () => setSoporte(String(rd.result));
     rd.readAsDataURL(file);
   };
-  const listo = lineas.length > 0 && lineas.every((l) => l.cantidad > 0 && l.costo.trim() !== '') && !m.isPending;
+  const listo = lineas.length > 0 && errores === 0 && cuadra && !!t && !m.isPending;
+  const falta = !lineas.length ? 'Agrega los productos de la factura' : errores ? `Revisa ${errores} línea(s)` : !t ? 'Escribe la tasa' : totalPapel.trim() === '' ? 'Escribe el total de la factura' : !cuadra ? 'El total no cuadra con la factura' : null;
 
   return (
     <Modal
-      title="Registrar compra"
+      title="Cargar factura de compra"
       size="lg"
       onClose={onClose}
       footer={
         <>
           <span className="mr-auto self-center text-sm text-steel-400">
-            Total <b className="tnum font-wide text-xl text-white">{fmt(total, moneda)}</b>
+            {falta ? <span className="text-warn">{falta}</span> : <span className="text-ok">Todo cuadra</span>}
           </span>
           <button className="btn-primary" disabled={!listo} onClick={() => m.mutate()}>
-            <PackagePlus className="h-4 w-4" /> Guardar y sumar al inventario
+            <PackagePlus className="h-4 w-4" /> Guardar factura y sumar al inventario
           </button>
         </>
       }
@@ -307,27 +394,50 @@ function CompraModal({ onClose }: { onClose: () => void }) {
           </div>
         </Field>
         <Field label="Factura nº">
-          <input className="input" value={factura} maxLength={40} onChange={(e) => setFactura(e.target.value)} />
+          <input className="input" value={factura} maxLength={40} onChange={(e) => setFactura(e.target.value)} placeholder="Si tiene número" />
         </Field>
-        <Field label="Fecha">
+        <Field label="Fecha de la factura">
           <input type="date" className="input" max={hoyISO()} value={fechaC} onChange={(e) => setFechaC(e.target.value)} />
         </Field>
       </div>
 
-      <div className="mt-5 flex flex-wrap items-center gap-3">
-        <p className="text-sm font-bold text-steel-300">Moneda de la factura</p>
-        <Tabs value={moneda} onChange={setMoneda} items={MONEDAS.map((x) => ({ value: x, label: INFO[x].simbolo }))} />
-        <p className="text-xs text-steel-500">El costo se convierte a la moneda de cada producto con la tasa de hoy.</p>
+      {/* 1. Moneda y tasa */}
+      <div className="mt-5 rounded-2xl border border-white/[0.06] p-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="text-sm font-bold text-steel-200">¿En qué moneda viene la factura?</p>
+          <Tabs value={moneda} onChange={setMoneda} items={MONEDAS.map((x) => ({ value: x, label: `${INFO[x].simbolo} ${INFO[x].corto}` }))} />
+        </div>
+        {usaTasa && (
+          <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+            <Field label="Dólar: pesos por $1">
+              <input className={cx('input tnum', tasaDolar !== null && 'border-flame-500/50')} inputMode="decimal" value={tasaDolar ?? textoNum(dia?.usdCop ?? 0, 'VES')} onChange={(e) => setTasaDolar(e.target.value)} />
+            </Field>
+            <Field label="Bs: pesos por Bs 1">
+              <input className={cx('input tnum', tasaBs !== null && 'border-flame-500/50')} inputMode="decimal" value={tasaBs ?? textoNum(dia?.vesCop ?? 0, 'VES')} onChange={(e) => setTasaBs(e.target.value)} />
+            </Field>
+            {tasaEditada ? (
+              <button className="btn-ghost btn-sm mb-1" onClick={() => (setTasaDolar(null), setTasaBs(null))}>
+                Usar la del día
+              </button>
+            ) : (
+              <span className="mb-3 text-xs text-steel-500">Tasa del día</span>
+            )}
+            <p className="text-xs text-steel-500 sm:col-span-3">
+              Con esta tasa se pasa el costo a la moneda en que se vende. Si la factura se pagó a otra tasa, escríbela: queda guardada en la compra.
+            </p>
+          </div>
+        )}
       </div>
 
-      <div className="relative mt-4">
+      {/* 2. Productos */}
+      <div className="relative mt-5">
         <ScanBarcode className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-steel-500" />
         <input
           ref={buscarRef}
           className="input pl-11"
-          placeholder="Escanea o busca el producto para agregarlo"
+          placeholder="Escanea o escribe el producto: si no existe, se crea aquí"
           value={buscar}
-          autoFocus
+          autoFocus={!codigoInicial}
           onChange={(e) => setBuscar(e.target.value)}
           onKeyDown={(e) => {
             if (e.key !== 'Enter') return;
@@ -335,48 +445,153 @@ function CompraModal({ onClose }: { onClose: () => void }) {
             const exacto = (productos ?? []).find((p) => p.codigoBarras && p.codigoBarras === buscar.trim());
             if (exacto) agregar(exacto);
             else if (sugeridos[0]) agregar(sugeridos[0]);
-            else if (buscar.trim()) toast.error('No hay un producto con ese código. Créalo primero en Planes y productos.');
+            else crear();
           }}
         />
-        {sugeridos.length > 0 && (
+        {buscar.trim() && (
           <div className="absolute inset-x-0 top-full z-10 mt-1 overflow-hidden rounded-xl border border-white/10 bg-ink-850 shadow-card">
             {sugeridos.map((p) => (
               <button key={p.id} className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm hover:bg-white/[0.05]" onClick={() => agregar(p)}>
                 <span className="flex-1 font-bold text-steel-100">{p.nombre}</span>
                 <span className="text-xs text-steel-500">
-                  stock {p.stock}
-                  {p.costo ? ` · costo ${fmt(Number(p.costo), p.moneda)}` : ''}
+                  stock {p.stock} · vende a {fmt(Number(p.precio), p.moneda)}
                 </span>
               </button>
             ))}
-          </div>
-        )}
-      </div>
-
-      <div className="mt-3 space-y-2">
-        {lineas.length === 0 && <p className="rounded-xl border border-dashed border-white/10 p-5 text-center text-sm text-steel-500">Agrega los productos que llegaron.</p>}
-        {lineas.length > 0 && (
-          <div className="grid grid-cols-[1fr_90px_130px_110px_28px] gap-2 px-1 text-[10px] font-bold uppercase tracking-wider text-steel-600">
-            <span>Producto</span>
-            <span>Cantidad</span>
-            <span>Costo c/u ({INFO[moneda].simbolo})</span>
-            <span className="text-right">Subtotal</span>
-            <span />
-          </div>
-        )}
-        {lineas.map((l) => (
-          <div key={l.productoId} className="grid grid-cols-[1fr_90px_130px_110px_28px] items-center gap-2">
-            <p className="truncate text-sm font-bold text-steel-100">{l.nombre}</p>
-            <NumInput className="py-2 text-center" value={l.cantidad} min={1} max={100000} onChange={(n) => setLineas((ls) => ls.map((x) => (x.productoId === l.productoId ? { ...x, cantidad: n } : x)))} />
-            <input className="input tnum py-2" inputMode="decimal" value={l.costo} placeholder="0" onChange={(e) => setLineas((ls) => ls.map((x) => (x.productoId === l.productoId ? { ...x, costo: e.target.value } : x)))} />
-            <p className="tnum text-right text-sm text-steel-300">{fmt(l.cantidad * leerMonto(l.costo), moneda)}</p>
-            <button className="text-steel-500 hover:text-bad" onClick={() => setLineas((ls) => ls.filter((x) => x.productoId !== l.productoId))}>
-              <X className="h-4 w-4" />
+            <button className="flex w-full items-center gap-2 border-t border-white/[0.06] px-4 py-2.5 text-left text-sm font-bold text-flame-300 hover:bg-white/[0.05]" onClick={crear}>
+              <Plus className="h-4 w-4" /> Crear producto nuevo: «{buscar.trim()}»
             </button>
           </div>
-        ))}
+        )}
       </div>
 
+      <div className="mt-3 space-y-3">
+        {lineas.length === 0 && <p className="rounded-xl border border-dashed border-white/10 p-5 text-center text-sm text-steel-500">Agrega los productos tal como vienen en la factura.</p>}
+        {lineas.map((l, i) => {
+          const r = revision[i];
+          return (
+            <div key={l.key} className={cx('rounded-2xl border p-4', r.error ? 'border-warn/30' : 'border-white/[0.08]')}>
+              <div className="grid grid-cols-[1fr_auto] gap-3 sm:grid-cols-[1fr_90px_130px_110px_28px] sm:items-end">
+                <div className="min-w-0">
+                  {l.nuevo ? (
+                    <Field label="Producto nuevo">
+                      <input className="input" autoFocus={ultima === l.key && !l.nombre} maxLength={100} value={l.nombre} placeholder="Ej. Yogurt griego 150 g" onChange={(e) => cambiar(l.key, { nombre: e.target.value })} />
+                    </Field>
+                  ) : (
+                    <>
+                      <p className="truncate font-bold text-steel-100">{l.nombre}</p>
+                      <p className="text-xs text-steel-500">Hay {l.stock ?? 0} · quedarán {(l.stock ?? 0) + l.cantidad}</p>
+                    </>
+                  )}
+                </div>
+                <button className="self-start text-steel-500 hover:text-bad sm:hidden" onClick={() => setLineas((ls) => ls.filter((x) => x.key !== l.key))}>
+                  <X className="h-4 w-4" />
+                </button>
+                <Field label="Cantidad">
+                  <NumInput className="py-2 text-center" value={l.cantidad} min={1} max={100000} onChange={(n) => cambiar(l.key, { cantidad: n })} />
+                </Field>
+                <Field label={`Costo c/u (${INFO[moneda].simbolo})`}>
+                  <input className="input tnum py-2" autoFocus={ultima === l.key && !l.nuevo} inputMode="decimal" value={l.costo} placeholder="1,10" onChange={(e) => cambiar(l.key, { costo: e.target.value })} />
+                </Field>
+                <div className="text-right">
+                  <p className="label">Subtotal</p>
+                  <p className="tnum py-2 text-sm font-bold text-steel-200">{fmt(l.cantidad * r.costoU, moneda)}</p>
+                </div>
+                <button className="hidden pb-3 text-steel-500 hover:text-bad sm:block" onClick={() => setLineas((ls) => ls.filter((x) => x.key !== l.key))}>
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {l.nuevo && (
+                <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                  <Field label="Categoría">
+                    <input className="input py-2" list="cats-compra" value={l.categoria} maxLength={40} onChange={(e) => cambiar(l.key, { categoria: e.target.value })} />
+                  </Field>
+                  <Field label="Código de barras">
+                    <input className="input tnum py-2" value={l.codigoBarras} maxLength={40} placeholder="Pásalo por la pistola" onChange={(e) => cambiar(l.key, { codigoBarras: e.target.value.replace(/\s/g, '') })} onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()} />
+                  </Field>
+                  <Field label="Se vende en">
+                    <select className="input py-2" value={l.monedaVenta} onChange={(e) => cambiar(l.key, { monedaVenta: e.target.value as Moneda })}>
+                      {MONEDAS.map((x) => (
+                        <option key={x} value={x}>
+                          {INFO[x].nombre}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
+              )}
+
+              {/* Conversión y salida de venta */}
+              <div className="mt-3 grid gap-3 rounded-xl bg-white/[0.025] p-3 sm:grid-cols-[1fr_1.2fr] sm:items-center">
+                <div className="text-sm">
+                  <p className="text-steel-400">
+                    Costo en {INFO[l.monedaVenta].corto.toLowerCase()}:{' '}
+                    <b className="tnum text-white">{r.costoU > 0 && t ? fmt(redondear(r.costoVenta, l.monedaVenta), l.monedaVenta) : '—'}</b>
+                  </p>
+                  {r.costoU > 0 && t && moneda !== l.monedaVenta && (
+                    <p className="tnum text-[11px] text-steel-500">
+                      {fmt(r.costoU, moneda)} × {(factor(moneda, l.monedaVenta, t)).toLocaleString('es-VE', { maximumFractionDigits: 4 })}
+                    </p>
+                  )}
+                  {r.costoVenta > 0 && (
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {MARGENES.map((g) => (
+                        <button key={g} className="chip border-white/10 py-0.5 text-[11px] text-steel-300 hover:border-flame-500/50" onClick={() => cambiar(l.key, { precio: textoNum(sugerido(r.costoVenta, g, l.monedaVenta), l.monedaVenta) })}>
+                          +{g}%
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <Field label={`Precio de venta (${INFO[l.monedaVenta].simbolo})`}>
+                    <input className={cx('input tnum text-lg', r.error === 'El precio de venta está por debajo del costo' && 'border-bad/60')} inputMode="decimal" value={l.precio} placeholder="Precio en caja" onChange={(e) => cambiar(l.key, { precio: e.target.value })} />
+                  </Field>
+                  {r.precio > 0 && cat && (
+                    <p className="mt-1 text-[11px] text-steel-500">
+                      En caja también: {equivalentes(r.precio, l.monedaVenta, cat.tasas)}
+                      {r.margen !== null && <span className={cx('ml-1 font-bold', r.margen < 0 ? 'text-bad' : 'text-ok')}>· ganancia {r.margen}%</span>}
+                    </p>
+                  )}
+                  {!l.nuevo && l.precioActual !== undefined && r.precio > 0 && redondear(r.precio, l.monedaVenta) !== l.precioActual && (
+                    <p className="mt-1 text-[11px] font-bold text-flame-300">Cambia el precio: antes {fmt(l.precioActual, l.monedaVenta)}</p>
+                  )}
+                </div>
+              </div>
+              {r.error && <p className="mt-2 text-xs font-bold text-warn">{r.error}</p>}
+            </div>
+          );
+        })}
+        <datalist id="cats-compra">
+          {CATEGORIAS.map((c) => (
+            <option key={c} value={c} />
+          ))}
+        </datalist>
+      </div>
+
+      {/* 3. Total contra el papel */}
+      {lineas.length > 0 && (
+        <div className={cx('mt-4 grid gap-3 rounded-2xl border p-4 sm:grid-cols-[1fr_1fr] sm:items-end', !totalPapel.trim() ? 'border-white/[0.08]' : cuadra ? 'border-ok/40 bg-ok/[0.05]' : 'border-bad/40 bg-bad/[0.05]')}>
+          <div>
+            <p className="label">Suman las líneas</p>
+            <p className="tnum font-wide text-2xl text-white">{fmt(total, moneda)}</p>
+            {t && moneda !== 'COP' && <p className="tnum text-xs text-steel-500">≈ {fmt(redondear(convertir(total, moneda, 'COP', t), 'COP'), 'COP')}</p>}
+          </div>
+          <div>
+            <Field label={`Total que dice la factura (${INFO[moneda].simbolo})`}>
+              <input className="input tnum text-lg" inputMode="decimal" value={totalPapel} placeholder="Ej. 36,30" onChange={(e) => setTotalPapel(e.target.value)} />
+            </Field>
+            {totalPapel.trim() && (
+              <p className={cx('mt-1 text-xs font-bold', cuadra ? 'text-ok' : 'text-bad')}>
+                {cuadra ? '✓ Cuadra con la factura' : `No cuadra: diferencia de ${fmt(Math.abs(redondear(papel - total, moneda)), moneda)}`}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 4. Pago al proveedor */}
       <div className="mt-5 rounded-2xl border border-white/[0.06] p-4">
         <Tabs
           value={pagada ? 'si' : 'no'}
@@ -409,11 +624,11 @@ function CompraModal({ onClose }: { onClose: () => void }) {
 
       <div className="mt-4 grid gap-4 sm:grid-cols-[1fr_auto]">
         <Field label="Nota (opcional)">
-          <input className="input" value={nota} maxLength={300} onChange={(e) => setNota(e.target.value)} />
+          <input className="input" value={nota} maxLength={300} onChange={(e) => setNota(e.target.value)} placeholder="Ej. vendedor Nigut" />
         </Field>
-        <Field label="Factura (foto o PDF)">
-          <label className="btn-ghost cursor-pointer">
-            <FileImage className="h-4 w-4" /> {soporte ? 'Cambiar' : 'Adjuntar'}
+        <Field label="Foto de la factura">
+          <label className={cx('btn-ghost cursor-pointer', soporte && 'border-ok/40 text-ok')}>
+            <FileImage className="h-4 w-4" /> {soporte ? 'Foto lista · cambiar' : 'Adjuntar'}
             <input type="file" accept="image/*,application/pdf" capture="environment" className="hidden" onChange={(e) => subir(e.target.files?.[0])} />
           </label>
         </Field>
@@ -431,10 +646,17 @@ function CompraModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+/** Precio sugerido: costo + margen, redondeado hacia arriba (pesos a la centena). */
+function sugerido(costo: number, margen: number, m: Moneda) {
+  const bruto = costo * (1 + margen / 100);
+  if (m === 'COP') return Math.ceil(bruto / 100) * 100;
+  return Math.ceil(bruto * 100) / 100;
+}
+
 function CompraDrawer({ compra: c, onClose }: { compra: Compra; onClose: () => void }) {
   const qc = useQueryClient();
   const { data: cat } = useCatalogo();
-  const { data } = useQuery({ queryKey: ['compra', c.id], queryFn: () => api<{ items: Array<{ id: number; nombre: string; cantidad: number; costoUnitario: number; subtotal: number }>; pagos: Array<{ id: number; metodo: string; montoTexto: string; creadoEn: string; registro: string }> }>(`/inventario/compras/${c.id}`) });
+  const { data } = useQuery({ queryKey: ['compra', c.id], queryFn: () => api<{ items: Array<{ id: number; nombre: string; cantidad: number; costoUnitario: number; subtotal: number; productoNuevo: boolean; costoTexto: string | null; precioTexto: string | null; precioAnteriorTexto: string | null }>; pagos: Array<{ id: number; metodo: string; montoTexto: string; creadoEn: string; registro: string }> }>(`/inventario/compras/${c.id}`) });
   const [abonar, setAbonar] = useState(false);
   const [anular, setAnular] = useState(false);
   const [monto, setMonto] = useState('');
@@ -507,18 +729,35 @@ function CompraDrawer({ compra: c, onClose }: { compra: Compra; onClose: () => v
       <h4 className="label">Productos</h4>
       <div className="space-y-1.5">
         {(data?.items ?? []).map((i) => (
-          <div key={i.id} className="flex items-center gap-3 rounded-xl bg-white/[0.02] px-4 py-2.5 text-sm">
-            <span className="flex-1 font-bold text-steel-100">{i.nombre}</span>
-            <span className="tnum text-steel-400">
-              {i.cantidad} × {fmt(i.costoUnitario, c.moneda)}
-            </span>
-            <span className="tnum w-28 text-right font-bold text-white">{fmt(i.subtotal, c.moneda)}</span>
+          <div key={i.id} className="rounded-xl bg-white/[0.02] px-4 py-2.5 text-sm">
+            <div className="flex items-center gap-3">
+              <span className="flex-1 font-bold text-steel-100">
+                {i.nombre}
+                {i.productoNuevo && <span className="chip ml-2 border-flame-500/30 py-0 text-[10px] text-flame-300">Nuevo</span>}
+              </span>
+              <span className="tnum text-steel-400">
+                {i.cantidad} × {fmt(i.costoUnitario, c.moneda)}
+              </span>
+              <span className="tnum w-28 text-right font-bold text-white">{fmt(i.subtotal, c.moneda)}</span>
+            </div>
+            {(i.costoTexto || i.precioTexto) && (
+              <p className="tnum mt-1 text-xs text-steel-500">
+                {i.costoTexto && `Costo ${i.costoTexto} c/u`}
+                {i.precioTexto && ` · se vende a ${i.precioTexto}`}
+                {i.precioAnteriorTexto && <span className="text-flame-300"> (antes {i.precioAnteriorTexto})</span>}
+              </p>
+            )}
           </div>
         ))}
       </div>
       <p className="mt-3 text-right text-sm text-steel-400">
         Total <b className="tnum text-white">{c.totalTexto}</b>
       </p>
+      {c.tasas && c.moneda !== 'COP' && (
+        <p className="mt-1 text-right text-xs text-steel-500">
+          Convertido con {textoTablero(c.tasas as never)} {c.tasas.fuente === 'factura' ? '(tasa de la factura)' : '(tasa del día)'}
+        </p>
+      )}
       <h4 className="label mt-6">Pagos al proveedor</h4>
       {!data?.pagos.length ? (
         <p className="text-sm text-steel-500">Ninguno.</p>

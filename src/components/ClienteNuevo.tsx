@@ -103,6 +103,21 @@ export function DatosRapidos<T extends DatosBase>({ d, set, conEmail, autoFocus 
   );
 }
 
+/**
+ * Enter funciona como Tab: salta al siguiente campo del formulario. En el
+ * último campo deja que Enter envíe (pasa al siguiente paso si está completo).
+ */
+function enterComoTab(e: React.KeyboardEvent<HTMLFormElement>) {
+  const el = e.target as HTMLElement;
+  if (e.key !== 'Enter' || e.shiftKey || !(el instanceof HTMLInputElement || el instanceof HTMLSelectElement)) return;
+  const campos = Array.from(e.currentTarget.querySelectorAll<HTMLElement>('input:not([type=hidden]):not(:disabled), select:not(:disabled)'));
+  const sig = campos[campos.indexOf(el) + 1];
+  if (!sig) return; // último campo: Enter envía el formulario
+  e.preventDefault();
+  sig.focus();
+  if (sig instanceof HTMLInputElement) sig.select();
+}
+
 export function ClienteNuevo({ onClose, nombreInicial = '' }: { onClose: () => void; nombreInicial?: string }) {
   const qc = useQueryClient();
   const { data: cat } = useCatalogo();
@@ -184,6 +199,7 @@ export function ClienteNuevo({ onClose, nombreInicial = '' }: { onClose: () => v
             e.preventDefault();
             if (datosOk(d)) setPaso(1);
           }}
+          onKeyDown={enterComoTab}
         >
           <DatosRapidos d={d} set={set} />
           <div className="mt-6 flex items-center justify-between gap-3">

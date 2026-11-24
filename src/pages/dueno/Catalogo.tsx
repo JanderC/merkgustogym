@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Archive, PackagePlus, Pencil, Plus, RotateCcw, ScanBarcode, Snowflake, Trash2, Users } from 'lucide-react';
+import { Archive, FileText, PackageMinus, Pencil, Plus, RotateCcw, ScanBarcode, Snowflake, Trash2, Users } from 'lucide-react';
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Precio } from '../../components/PanelPago';
 import { PlanClientesModal } from '../../components/PlanClientes';
@@ -198,18 +198,17 @@ function ProductoModal({ prod, onClose }: { prod: Partial<Producto> | null; onCl
     categoria: prod?.categoria ?? 'Bebidas',
     precio: prod?.precio !== undefined ? String(prod.precio).replace('.', ',') : '',
     moneda: prod?.moneda ?? ('COP' as Moneda),
-    costo: prod?.costo !== undefined ? String(prod.costo).replace('.', ',') : '',
-    stock: prod?.stock ?? 0,
     stockMinimo: prod?.stockMinimo ?? 5,
-    controlaStock: prod?.controlaStock ?? true,
+    // Lo nuevo desde aquí solo puede ser un servicio: los productos con inventario nacen en la factura
+    controlaStock: prod?.id ? !!prod.controlaStock : false,
     activo: prod?.activo ?? true,
     codigoBarras: prod?.codigoBarras ?? '',
   });
   const precio = leerMonto(f.precio);
-  const costo = leerMonto(f.costo);
+  const costo = Number(prod?.costo ?? 0);
   const m = useMutation({
     mutationFn: () => {
-      const body = { ...f, precio, costo, codigoBarras: f.codigoBarras.trim() || null };
+      const body = { ...f, precio, codigoBarras: f.codigoBarras.trim() || null };
       return prod?.id ? api(`/productos/${prod.id}`, { method: 'PUT', body }) : api('/productos', { body });
     },
     onSuccess: () => {
@@ -222,7 +221,7 @@ function ProductoModal({ prod, onClose }: { prod: Partial<Producto> | null; onCl
   });
   return (
     <Modal
-      title={prod?.id ? 'Editar producto' : 'Nuevo producto'}
+      title={prod?.id ? 'Editar producto' : 'Nuevo servicio (sin inventario)'}
       onClose={onClose}
       footer={
         <button className="btn-primary" disabled={m.isPending || f.nombre.length < 2} onClick={() => m.mutate()}>
@@ -261,26 +260,38 @@ function ProductoModal({ prod, onClose }: { prod: Partial<Producto> | null; onCl
             <Field label={`Precio de venta (${INFO[f.moneda].simbolo})`}>
               <input className="input tnum text-lg" inputMode="decimal" value={f.precio} onChange={(e) => setF({ ...f, precio: e.target.value })} placeholder="4.500" />
             </Field>
-            <Field label={`Costo (${INFO[f.moneda].simbolo})`} hint="Para calcular la ganancia">
-              <input className="input tnum" inputMode="decimal" value={f.costo} onChange={(e) => setF({ ...f, costo: e.target.value })} />
-            </Field>
+            {f.controlaStock && (
+              <div>
+                <p className="label">Costo promedio</p>
+                <p className="tnum py-2 text-steel-200">{costo > 0 ? fmt(costo, prod?.moneda ?? f.moneda) : '—'}</p>
+                <p className="text-[11px] text-steel-500">Sale de las facturas de compra</p>
+              </div>
+            )}
           </div>
-          {precio > 0 && costo > 0 && (
+          {!!prod?.id && f.moneda !== prod.moneda && costo > 0 && <p className="mt-2 text-xs text-warn">Al cambiar la moneda, el costo se convierte con la tasa de hoy.</p>}
+          {precio > 0 && costo > 0 && f.moneda === prod?.moneda && (
             <p className="mt-2 text-xs text-ok">
               Ganancia por unidad: {fmt(precio - costo, f.moneda)} ({Math.round(((precio - costo) / precio) * 100)}%)
             </p>
           )}
         </div>
-        {!prod?.id && (
-          <Field label="Stock inicial">
-            <NumInput value={f.stock} min={0} onChange={(n) => setF({ ...f, stock: n })} />
-          </Field>
+        {f.controlaStock ? (
+          <>
+            <div>
+              <p className="label">En inventario</p>
+              <p className="tnum py-2 text-lg font-bold text-white">{prod?.stock ?? 0}</p>
+              <p className="text-[11px] text-steel-500">Entra por factura; se corrige con el conteo físico</p>
+            </div>
+            <Field label="Avisar cuando queden">
+              <NumInput value={f.stockMinimo} min={0} onChange={(n) => setF({ ...f, stockMinimo: n })} />
+            </Field>
+          </>
+        ) : (
+          <p className="col-span-2 rounded-xl border border-white/[0.06] p-3 text-xs text-steel-400">
+            Servicio sin inventario (ej. alquiler de toalla). Para mercancía que se compra usa <b>Cargar factura</b>: ahí se crea el producto con su costo.
+          </p>
         )}
-        <Field label="Avisar cuando queden">
-          <NumInput value={f.stockMinimo} min={0} onChange={(n) => setF({ ...f, stockMinimo: n })} />
-        </Field>
-        <div className="col-span-2 grid grid-cols-2">
-          <Toggle checked={f.controlaStock} onChange={(v) => setF({ ...f, controlaStock: v })} label="Controlar inventario" />
+        <div className="col-span-2">
           <Toggle checked={f.activo} onChange={(v) => setF({ ...f, activo: v })} label="Disponible en caja" />
         </div>
       </div>
@@ -290,12 +301,12 @@ function ProductoModal({ prod, onClose }: { prod: Partial<Producto> | null; onCl
 
 function EntradaStock({ prod, onClose }: { prod: Producto; onClose: () => void }) {
   const qc = useQueryClient();
-  const [cantidad, setCantidad] = useState(-1);
+  const [cantidad, setCantidad] = useState(1);
   const [motivo, setMotivo] = useState('');
   const m = useMutation({
-    mutationFn: () => api(`/productos/${prod.id}/entrada`, { body: { cantidad, motivo: motivo.trim() || null } }),
+    mutationFn: () => api(`/productos/${prod.id}/entrada`, { body: { cantidad: -cantidad, motivo: motivo.trim() } }),
     onSuccess: () => {
-      toast.success(`Stock ajustado: ${prod.nombre}`, { description: 'Quedó registrado en Inventario › Movimientos' });
+      toast.success(`Salida registrada: ${prod.nombre}`, { description: 'Quedó registrado en Inventario › Movimientos' });
       ['productos', 'catalogo', 'kardex', 'inventario-resumen'].forEach((k) => void qc.invalidateQueries({ queryKey: [k] }));
       onClose();
     },
@@ -303,28 +314,28 @@ function EntradaStock({ prod, onClose }: { prod: Producto; onClose: () => void }
   });
   return (
     <Modal
-      title={`Ajustar: ${prod.nombre}`}
+      title={`Sacar del inventario: ${prod.nombre}`}
       size="sm"
       onClose={onClose}
       footer={
-        <button className="btn-primary" disabled={!cantidad || motivo.trim().length < 3 || m.isPending} onClick={() => m.mutate()}>
+        <button className="btn-primary" disabled={cantidad < 1 || cantidad > prod.stock || motivo.trim().length < 3 || m.isPending} onClick={() => m.mutate()}>
           Aplicar
         </button>
       }
     >
       <p className="mb-4 rounded-xl border border-flame-500/20 bg-flame-500/[0.05] p-3 text-sm text-steel-300">
-        ¿Llegó mercancía? Regístrala en <Link to="/panel/inventario" className="font-bold text-flame-400">Inventario › Compras</Link> para que quede su costo y el proveedor. Aquí solo ajustes (merma, rotura, consumo interno).
+        ¿Llegó mercancía? Solo entra con su factura en <Link to="/panel/inventario?cargar=1" className="font-bold text-flame-400">Cargar factura</Link>. Aquí solo salidas: merma, rotura, vencido o consumo interno.
       </p>
       <p className="mb-4 text-sm text-steel-400">
-        Stock actual: <b className="text-white">{prod.stock}</b>. Negativo descuenta, positivo suma.
+        Hay <b className="text-white">{prod.stock}</b>.
       </p>
-      <Field label="Unidades">
-        <NumInput className="text-lg" value={cantidad} min={-100000} max={100000} onChange={setCantidad} />
+      <Field label="Unidades que salen">
+        <NumInput className="text-lg" value={cantidad} min={1} max={Math.max(prod.stock, 1)} onChange={setCantidad} />
       </Field>
       <Field label="Motivo" className="mt-3">
         <input className="input" value={motivo} maxLength={150} onChange={(e) => setMotivo(e.target.value)} placeholder="Ej. se rompió una botella" />
       </Field>
-      <p className="mt-3 text-sm text-steel-500">Quedará en {prod.stock + cantidad}</p>
+      <p className="mt-3 text-sm text-steel-500">Quedarán {prod.stock - cantidad}</p>
     </Modal>
   );
 }
@@ -339,6 +350,7 @@ export default function Catalogo() {
   const planes = useQuery({ queryKey: ['planes'], queryFn: () => api<Plan[]>('/planes') });
   const productos = useQuery({ queryKey: ['productos'], queryFn: () => api<Producto[]>('/productos') });
   const [buscarProd, setBuscarProd] = useState('');
+  const navigate = useNavigate();
   const qp = buscarProd.trim().toLowerCase();
   const listaProd = (productos.data ?? []).filter((p) => !qp || p.nombre.toLowerCase().includes(qp) || p.categoria.toLowerCase().includes(qp) || (p.codigoBarras ?? '').toLowerCase() === qp);
   // Pistola en el buscador: si el código existe abre el producto; si no, crea el producto con ese código
@@ -350,8 +362,8 @@ export default function Catalogo() {
       setProd(p);
       setBuscarProd('');
     } else if (/^[0-9A-Za-z._-]{4,40}$/.test(c) && listaProd.length === 0) {
-      setProd({ codigoBarras: c });
-      setBuscarProd('');
+      // No existe: se crea cargando su factura
+      navigate(`/panel/inventario?cargar=1&codigo=${encodeURIComponent(c)}`);
     }
   };
 
@@ -361,9 +373,20 @@ export default function Catalogo() {
         title="Planes y productos"
         kicker="Lo que se vende"
         actions={
-          <button className="btn-primary" onClick={() => (tab === 'planes' ? setPlan(null) : setProd(null))}>
-            <Plus className="h-4 w-4" /> {tab === 'planes' ? 'Nuevo plan' : 'Nuevo producto'}
-          </button>
+          tab === 'planes' ? (
+            <button className="btn-primary" onClick={() => setPlan(null)}>
+              <Plus className="h-4 w-4" /> Nuevo plan
+            </button>
+          ) : (
+            <div className="flex gap-2">
+              <button className="btn-ghost" onClick={() => setProd(null)}>
+                <Plus className="h-4 w-4" /> Servicio
+              </button>
+              <Link className="btn-primary" to="/panel/inventario?cargar=1">
+                <FileText className="h-4 w-4" /> Cargar factura
+              </Link>
+            </div>
+          )
         }
       >
         Cada plan y producto tiene su precio en su moneda. En caja se cobra en la que elija el cliente, con las tasas del día.
@@ -442,7 +465,7 @@ export default function Catalogo() {
           <ScanBarcode className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-steel-500" />
           <input
             className="input pl-11"
-            placeholder="Buscar o escanear código: si existe lo abre, si no lo crea"
+            placeholder="Buscar o escanear código: si existe lo abre; si no, carga su factura"
             value={buscarProd}
             onChange={(e) => setBuscarProd(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && escanearProd()}
@@ -483,8 +506,8 @@ export default function Catalogo() {
                     <td className="text-right">
                       <div className="flex justify-end gap-1">
                         {p.controlaStock && (
-                          <button className="btn-ghost btn-sm" onClick={() => setStock(p)}>
-                            <PackagePlus className="h-4 w-4" /> Ajustar
+                          <button className="btn-ghost btn-sm" title="Merma, rotura, vencido" onClick={() => setStock(p)} disabled={p.stock < 1}>
+                            <PackageMinus className="h-4 w-4" /> Salida
                           </button>
                         )}
                         <button className="rounded-lg p-2 text-steel-500 hover:text-white" onClick={() => setProd(p)}>
