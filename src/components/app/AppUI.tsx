@@ -513,6 +513,8 @@ export function RutinaEditor({
 /** Insignia de alerta del entrenador. */
 export function ChipAlerta({ tipo, texto }: { tipo: string; texto: string }) {
   const cls =
-    tipo === 'vencido' ? 'border-bad/30 bg-bad/10 text-bad' : tipo === 'vence' ? 'border-warn/30 bg-warn/10 text-warn' : tipo === 'ausente' ? 'border-sky-400/30 bg-sky-400/10 text-sky-300' : 'border-white/10 text-steel-400';
+    tipo === 'personalizado'
+      ? 'border-flame-500/30 bg-flame-500/10 text-flame-300'
+      : tipo === 'vencido' ? 'border-bad/30 bg-bad/10 text-bad' : tipo === 'vence' ? 'border-warn/30 bg-warn/10 text-warn' : tipo === 'ausente' ? 'border-sky-400/30 bg-sky-400/10 text-sky-300' : 'border-white/10 text-steel-400';
   return <span className={cx('chip', cls)}>{texto}</span>;
 }

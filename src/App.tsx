@@ -19,6 +19,7 @@ import Entradas from './pages/cajero/Entradas';
 import MiTurno from './pages/cajero/MiTurno';
 import SociosPage from './pages/cajero/Socios';
 import Membresias from './pages/cajero/Membresias';
+import Personalizados from './pages/cajero/Personalizados';
 import Clases from './pages/cajero/Clases';
 import Asistencia from './pages/dueno/Asistencia';
 import Ajustes from './pages/dueno/Ajustes';
@@ -78,6 +79,7 @@ export default function App() {
         <Route path="entradas" element={<Entradas />} />
         <Route path="clientes" element={<SociosPage />} />
         <Route path="membresias" element={<Membresias />} />
+        <Route path="personalizados" element={<Personalizados />} />
         <Route path="clases" element={<Clases />} />
         <Route path="entrenadores" element={<EntrenadoresKiosko />} />
         <Route path="turno" element={<MiTurno />} />
@@ -96,6 +98,7 @@ export default function App() {
         <Route path="ventas" element={<Ventas />} />
         <Route path="clientes" element={<SociosPage />} />
         <Route path="membresias" element={<Membresias />} />
+        <Route path="personalizados" element={<Personalizados />} />
         <Route path="clases" element={<Clases />} />
         <Route path="asistencia" element={<Asistencia />} />
         <Route path="reportes" element={<Reportes />} />

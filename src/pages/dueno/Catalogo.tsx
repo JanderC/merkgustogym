@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { Precio } from '../../components/PanelPago';
 import { PlanClientesModal } from '../../components/PlanClientes';
 import { cx, Field, Loading, Modal, NumInput, PageHeader, Tabs, Toggle } from '../../components/ui';
+import { Paginacion, Th, useTabla } from '../../components/Tabla';
 import { api } from '../../lib/api';
 import { useCatalogo } from '../../lib/hooks';
 import { convertir, fmt, INFO, leerMonto, MONEDAS, type Moneda } from '../../lib/monedas';
@@ -353,6 +354,17 @@ export default function Catalogo() {
   const navigate = useNavigate();
   const qp = buscarProd.trim().toLowerCase();
   const listaProd = (productos.data ?? []).filter((p) => !qp || p.nombre.toLowerCase().includes(qp) || p.categoria.toLowerCase().includes(qp) || (p.codigoBarras ?? '').toLowerCase() === qp);
+  const tp = useTabla(
+    listaProd,
+    {
+      nombre: { label: 'Producto', valor: (p) => p.nombre },
+      categoria: { label: 'Categoría', valor: (p) => p.categoria },
+      precio: { label: 'Precio', valor: (p) => (cat ? convertir(Number(p.precio), p.moneda, 'COP', cat.tasas) : Number(p.precio)) },
+      ganancia: { label: 'Ganancia', valor: (p) => (Number(p.costo ?? 0) > 0 ? (Number(p.precio) - Number(p.costo)) / Number(p.precio) : null) },
+      stock: { label: 'Stock', valor: (p) => (p.controlaStock ? p.stock : null) },
+    },
+    { id: 'productos', orden: { col: 'nombre', dir: 'asc' } },
+  );
   // Pistola en el buscador: si el código existe abre el producto; si no, crea el producto con ese código
   const escanearProd = () => {
     const c = buscarProd.trim();
@@ -475,16 +487,16 @@ export default function Catalogo() {
           <table className="table-base">
             <thead>
               <tr>
-                <th>Producto</th>
-                <th>Categoría</th>
-                <th className="text-right">Precio</th>
-                <th className="text-right">Ganancia</th>
-                <th className="text-right">Stock</th>
+                <th><Th t={tp} col="nombre" /></th>
+                <th><Th t={tp} col="categoria" /></th>
+                <th className="text-right"><Th t={tp} col="precio" /></th>
+                <th className="text-right"><Th t={tp} col="ganancia" /></th>
+                <th className="text-right"><Th t={tp} col="stock" /></th>
                 <th />
               </tr>
             </thead>
             <tbody>
-              {listaProd.map((p) => {
+              {tp.visibles.map((p) => {
                 const bajo = p.controlaStock && p.stock <= (p.stockMinimo ?? 0);
                 const costo = Number(p.costo ?? 0);
                 return (
@@ -520,6 +532,7 @@ export default function Catalogo() {
               })}
             </tbody>
           </table>
+          <Paginacion t={tp} />
         </div>
         </div>
       )}

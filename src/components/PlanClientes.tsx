@@ -6,6 +6,7 @@ import { api } from '../lib/api';
 import { fecha, sumarDias } from '../lib/format';
 import type { Plan } from '../lib/types';
 import { SocioDrawer } from './socios';
+import { Paginacion, Th, useTabla } from './Tabla';
 import { cx, Loading, Modal } from './ui';
 
 interface ClienteVigente {
@@ -76,6 +77,26 @@ export function PlanClientesModal({ plan, eliminar, planes, onClose }: { plan: P
   };
   const vigentes = useMemo(() => filtrar(data?.vigentes ?? []), [data, buscar]); // eslint-disable-line react-hooks/exhaustive-deps
   const anteriores = useMemo(() => filtrar(data?.anteriores ?? []), [data, buscar]); // eslint-disable-line react-hooks/exhaustive-deps
+  const tv = useTabla(
+    vigentes,
+    {
+      nombre: { label: 'Cliente', valor: (c) => nombreCompleto(c) },
+      desde: { label: 'Pagó desde', valor: (c) => c.desde },
+      hasta: { label: 'Vence', valor: (c) => c.hasta },
+      proximo: { label: 'Próxima mensualidad', valor: (c) => (c.congelada ? null : c.hasta) },
+      estado: { label: 'Estado', valor: (c) => (c.congelada ? 'congelada' : c.porEmpezar ? 'por empezar' : 'vigente') },
+    },
+    { id: 'plan-vigentes', orden: { col: 'hasta', dir: 'asc' }, porPagina: 10 },
+  );
+  const ta = useTabla(
+    anteriores,
+    {
+      nombre: { label: 'Cliente', valor: (c) => nombreCompleto(c) },
+      telefono: { label: 'Teléfono', valor: (c) => c.telefono },
+      fin: { label: 'Venció el', valor: (c) => c.ultimaFin },
+    },
+    { id: 'plan-anteriores', orden: { col: 'fin', dir: 'desc' }, porPagina: 10 },
+  );
   const nVig = data?.vigentes.length ?? 0;
   const nAnt = data?.anteriores.length ?? 0;
   const destino = otros.find((p) => p.id === destinoId);
@@ -167,19 +188,19 @@ export function PlanClientesModal({ plan, eliminar, planes, onClose }: { plan: P
                   <CalendarClock className="h-4 w-4 text-flame-400" /> Clientes con este plan vigente
                 </p>
                 <div className="overflow-hidden rounded-2xl border border-white/[0.06]">
-                  <div className="max-h-[40vh] overflow-y-auto">
+                  <div className="overflow-x-auto">
                     <table className="table-base">
-                      <thead className="sticky top-0 bg-ink-900">
+                      <thead>
                         <tr>
-                          <th>Cliente</th>
-                          <th>Pagó desde</th>
-                          <th>Vence</th>
-                          <th>Próxima mensualidad</th>
-                          <th>Estado</th>
+                          <th><Th t={tv} col="nombre" /></th>
+                          <th><Th t={tv} col="desde" /></th>
+                          <th><Th t={tv} col="hasta" /></th>
+                          <th><Th t={tv} col="proximo" /></th>
+                          <th><Th t={tv} col="estado" /></th>
                         </tr>
                       </thead>
                       <tbody>
-                        {vigentes.map((c) => (
+                        {tv.visibles.map((c) => (
                           <tr key={c.socioId} className="cursor-pointer hover:bg-white/[0.03]" onClick={() => setSocioId(c.socioId)}>
                             <td>
                               <p className="font-bold text-steel-100">{nombreCompleto(c)}</p>
@@ -214,6 +235,7 @@ export function PlanClientesModal({ plan, eliminar, planes, onClose }: { plan: P
                       </tbody>
                     </table>
                   </div>
+                  <Paginacion t={tv} />
                 </div>
                 <p className="mt-1.5 text-xs text-steel-500">Toca un cliente para ver su ficha completa.</p>
               </div>
@@ -276,17 +298,17 @@ export function PlanClientesModal({ plan, eliminar, planes, onClose }: { plan: P
                   <History className="h-4 w-4" /> {verAnteriores ? 'Ocultar' : 'Ver'} quiénes lo tuvieron antes ({nAnt})
                 </button>
                 {verAnteriores && (
-                  <div className="mt-2 max-h-[30vh] overflow-y-auto rounded-2xl border border-white/[0.06]">
+                  <div className="mt-2 overflow-x-auto rounded-2xl border border-white/[0.06]">
                     <table className="table-base">
-                      <thead className="sticky top-0 bg-ink-900">
+                      <thead>
                         <tr>
-                          <th>Cliente</th>
-                          <th>Teléfono</th>
-                          <th>Venció el</th>
+                          <th><Th t={ta} col="nombre" /></th>
+                          <th><Th t={ta} col="telefono" /></th>
+                          <th><Th t={ta} col="fin" /></th>
                         </tr>
                       </thead>
                       <tbody>
-                        {anteriores.map((c) => (
+                        {ta.visibles.map((c) => (
                           <tr key={c.socioId} className="cursor-pointer hover:bg-white/[0.03]" onClick={() => setSocioId(c.socioId)}>
                             <td>
                               <p className="text-steel-100">{nombreCompleto(c)}</p>
@@ -298,6 +320,7 @@ export function PlanClientesModal({ plan, eliminar, planes, onClose }: { plan: P
                         ))}
                       </tbody>
                     </table>
+                    <Paginacion t={ta} />
                   </div>
                 )}
               </div>

@@ -1,11 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowDownCircle, ArrowUpCircle, CalendarCheck, CheckCircle2, HandCoins, Keyboard, Minus, Package, Plus, Power, Receipt, ScanBarcode, ShoppingBag, Trash2, Undo2, UserPlus, UserRound, Users, X, Zap } from 'lucide-react';
+import { ArrowDownCircle, ArrowUpCircle, Award, CalendarCheck, CheckCircle2, Dumbbell, HandCoins, Keyboard, Minus, Package, Plus, Power, Receipt, ScanBarcode, ShoppingBag, Trash2, Undo2, UserPlus, UserRound, Users, X, Zap } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { AbrirPuerta } from '../../components/AbrirPuerta';
 import { ClienteNuevo, EstadoLector, type VentaHecha } from '../../components/ClienteNuevo';
 import { DevolucionModal } from '../../components/Devolucion';
+import { EntrenadorAvatar } from '../../components/entrenadores';
+import { EstadoPz } from './Personalizados';
 import { PanelPago, Precio, type PagoPayload } from '../../components/PanelPago';
 import { SocioPicker } from '../../components/socios';
 import { Avatar, cx, Empty, Loading, Modal, Tabs } from '../../components/ui';
@@ -14,7 +16,7 @@ import { duracion, fecha, fechaDia, finPlan, hoyISO, sumarDias } from '../../lib
 import { MovimientoModal } from './MiTurno';
 import { useCatalogo, useTurno } from '../../lib/hooks';
 import { fmt, type Moneda } from '../../lib/monedas';
-import type { Deuda, Plan, Producto, SocioDetalle, SocioLista } from '../../lib/types';
+import type { Deuda, EntrenadorPersonalizado, Plan, Producto, SocioDetalle, SocioLista } from '../../lib/types';
 
 interface ClienteSel {
   id: string;
@@ -25,7 +27,7 @@ interface ClienteSel {
 }
 type Linea = {
   key: string;
-  tipo: 'membresia' | 'producto' | 'abono';
+  tipo: 'membresia' | 'producto' | 'abono' | 'personalizado';
   id: number;
   nombre: string;
   precio: number;
@@ -37,6 +39,10 @@ type Linea = {
   personas?: number;
   acompanantes?: Array<{ id: string; nombre: string }>;
   desde?: 'continuar' | 'hoy';
+  /** Personalizado: con quién, por mes o por semana (cantidad = periodos) */
+  entrenadorId?: string;
+  periodo?: 'meses' | 'semanas';
+  ent?: EntrenadorPersonalizado;
 };
 
 export function AbrirTurno() {
@@ -71,7 +77,7 @@ export default function Cobrar() {
   const { data: cat } = useCatalogo();
   const [params, setParams] = useSearchParams();
   const [cliente, setCliente] = useState<ClienteSel | null>(null);
-  const [tab, setTab] = useState<'planes' | 'tienda'>('planes');
+  const [tab, setTab] = useState<'planes' | 'tienda' | 'personalizado'>('planes');
   const [lineas, setLineas] = useState<Linea[]>([]);
   const [nuevo, setNuevo] = useState<string | null>(null);
   const [busqueda, setBusqueda] = useState('');
@@ -115,17 +121,40 @@ export default function Cobrar() {
       { key: `m${p.id}`, tipo: 'membresia', id: p.id, nombre: `Plan ${p.nombre}`, precio: p.precio, moneda: p.moneda, cantidad: 1, color: p.color, personas: p.personas, acompanantes, desde: 'continuar' },
     ]);
 
-  // ?cliente=ID[&plan=ID] → preselecciona (viene de "Renovar" en la ficha)
+  const tarifa = (e: EntrenadorPersonalizado, periodo: 'meses' | 'semanas') => (periodo === 'meses' ? e.mensual : (e.semanal ?? e.mensual));
+  const ponerPersonalizado = (e: EntrenadorPersonalizado, periodo: 'meses' | 'semanas' = 'meses') =>
+    setLineas((ls) => [
+      ...ls.filter((l) => l.key !== `e${e.id}`),
+      { key: `e${e.id}`, tipo: 'personalizado', id: 0, entrenadorId: e.id, ent: e, periodo, nombre: `Personalizado con ${e.nombre}`, precio: tarifa(e, periodo), moneda: e.moneda, cantidad: 1 },
+    ]);
+  const cambiarPeriodo = (key: string, periodo: 'meses' | 'semanas') =>
+    setLineas((ls) => ls.map((l) => (l.key === key && l.ent ? { ...l, periodo, precio: tarifa(l.ent, periodo), cantidad: 1 } : l)));
+  const addPersonalizado = (e: EntrenadorPersonalizado) => {
+    if (!cliente) {
+      toast.warning('Primero busca o registra al cliente', { description: 'El personalizado queda a nombre del cliente y su entrenador lo ve en su app.' });
+      return;
+    }
+    ponerPersonalizado(e);
+  };
+
+  // ?cliente=ID[&plan=ID | &personalizado=ENTRENADOR] → preselecciona (viene de "Renovar")
   const clienteParam = params.get('cliente');
   const planParam = params.get('plan');
+  const pzParam = params.get('personalizado');
   const { data: pre } = useQuery({ queryKey: ['socio', clienteParam], enabled: !!clienteParam, queryFn: () => api<SocioDetalle>(`/socios/${clienteParam}`) });
   useEffect(() => {
     if (!pre || !cat || !clienteParam) return;
     setCliente({ id: pre.id, nombre: `${pre.nombre} ${pre.apellido}`.trim(), codigo: pre.codigo, tieneFoto: !!pre.foto, vence: pre.vigencia.hasta ?? pre.vigencia.ultimaFin });
     const p = cat.planes.find((x) => x.id === Number(planParam));
     if (p && p.personas === 1) ponerPlan(p);
+    const e = cat.entrenadores?.find((x) => x.id === pzParam);
+    if (e) {
+      ponerPersonalizado(e);
+      setTab('personalizado');
+    } else if (pzParam) toast.warning('Ese entrenador no tiene tarifa de personalizado activa');
     params.delete('cliente');
     params.delete('plan');
+    params.delete('personalizado');
     setParams(params, { replace: true });
   }, [pre, cat]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -204,7 +233,15 @@ export default function Cobrar() {
     setLineas((ls) => (ls.some((l) => l.key === `a${d.id}`) ? ls : [...ls, { key: `a${d.id}`, tipo: 'abono', id: d.id, nombre: `Abono: ${d.concepto}`, precio: Number(d.saldo), moneda: d.moneda, cantidad: 1 }]));
   const cambiarCant = (key: string, d: number) =>
     setLineas((ls) =>
-      ls.map((l) => (l.key === key ? { ...l, cantidad: Math.max(0, l.controla && l.stock !== undefined ? Math.min(l.stock, l.cantidad + d) : l.cantidad + d) } : l)).filter((l) => l.cantidad > 0),
+      ls
+        .map((l) =>
+          l.key !== key
+            ? l
+            : l.tipo === 'personalizado'
+              ? { ...l, cantidad: Math.min(12, Math.max(1, l.cantidad + d)) }
+              : { ...l, cantidad: Math.max(0, l.controla && l.stock !== undefined ? Math.min(l.stock, l.cantidad + d) : l.cantidad + d) },
+        )
+        .filter((l) => l.cantidad > 0),
     );
   const quitar = (key: string) => setLineas((ls) => ls.filter((l) => l.key !== key));
   const limpiar = () => {
@@ -220,7 +257,9 @@ export default function Cobrar() {
           items: lineas.map((l) =>
             l.tipo === 'membresia'
               ? { tipo: 'membresia', id: l.id, acompanantes: l.acompanantes?.map((a) => a.id), desde: l.desde }
-              : l.tipo === 'abono'
+              : l.tipo === 'personalizado'
+                ? { tipo: 'personalizado', entrenadorId: l.entrenadorId, periodo: l.periodo, cantidad: l.cantidad }
+                : l.tipo === 'abono'
                 ? { tipo: 'abono', deudaId: l.id, monto: l.precio }
                 : { tipo: 'producto', id: l.id, cantidad: l.cantidad },
           ),
@@ -230,7 +269,7 @@ export default function Cobrar() {
     onSuccess: (r) => {
       setExito({ ...r, cliente });
       limpiar();
-      ['turno', 'catalogo', 'socios', 'socio'].forEach((k) => void qc.invalidateQueries({ queryKey: [k] }));
+      ['turno', 'catalogo', 'socios', 'socio', 'personalizados'].forEach((k) => void qc.invalidateQueries({ queryKey: [k] }));
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -320,6 +359,19 @@ export default function Cobrar() {
                 <X className="h-4 w-4" /> Cambiar
               </button>
             </div>
+            {(ficha?.personalizados ?? []).length > 0 && (
+              <div className="mt-3 space-y-1.5 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2">
+                {ficha!.personalizados!.map((p) => (
+                  <p key={p.entrenadorId} className="flex flex-wrap items-center gap-1.5 text-sm text-steel-300">
+                    <Award className="h-4 w-4 text-flame-400" /> Personalizado con <b className="text-steel-100">{p.entrenador}</b> <EstadoPz estado={p.estado} />
+                    <span className="text-xs text-steel-500">
+                      {p.estadoTexto}
+                      {p.hasta && p.estado !== 'vencido' ? ` · hasta ${fecha(p.hasta)}` : ''}
+                    </span>
+                  </p>
+                ))}
+              </div>
+            )}
             {deudas.length > 0 && (
               <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-sky-400/25 bg-sky-400/[0.06] px-3 py-2">
                 <HandCoins className="h-4 w-4 text-sky-300" />
@@ -355,11 +407,42 @@ export default function Cobrar() {
           }}
           items={[
             { value: 'planes', label: 'Planes' },
+            { value: 'personalizado', label: 'Personalizado' },
             { value: 'tienda', label: 'Tienda' },
           ]}
         />
 
-        {tab === 'planes' ? (
+        {tab === 'personalizado' ? (
+          !cat?.entrenadores?.length ? (
+            <Empty icon={<Dumbbell className="h-7 w-7" />} title="Ningún entrenador tiene tarifa de personalizado" hint="El dueño la pone en Panel › Entrenadores › (entrenador) › Pago." />
+          ) : (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {cat.entrenadores.map((e) => {
+                const sel = lineas.some((l) => l.key === `e${e.id}`);
+                const actual = ficha?.personalizados?.find((p) => p.entrenadorId === e.id);
+                const suyo = ficha?.entrenadorId === e.id;
+                return (
+                  <button key={e.id} onClick={() => addPersonalizado(e)} className={cx('plate card-hover p-5 pt-6 text-left', sel && 'border-flame-500/60 ring-2 ring-flame-500/40', !cliente && 'opacity-60')}>
+                    <div className="flex items-center gap-3">
+                      <EntrenadorAvatar e={e} size={48} />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-display text-lg font-extrabold text-white">{e.nombre}</p>
+                        <p className="truncate text-xs text-steel-500">{e.especialidad ?? 'Entrenamiento personalizado'}</p>
+                      </div>
+                    </div>
+                    {(actual || suyo) && <p className="mt-2 text-[11px] font-bold text-flame-300">{actual ? `Su entrenador · ${actual.estadoTexto.toLowerCase()}` : 'Es su entrenador asignado'}</p>}
+                    <div className="mt-4">
+                      <p className="mb-1 text-[11px] font-bold uppercase tracking-wider text-steel-500">Por mes</p>
+                      <Precio monto={e.mensual} moneda={e.moneda} tasas={cat.tasas} grande />
+                      {e.semanal && <p className="mt-2 text-xs text-steel-400">o {fmt(e.semanal, e.moneda)} por semana</p>}
+                    </div>
+                    {sel && <CheckCircle2 className="absolute bottom-4 right-4 h-6 w-6 text-flame-500" />}
+                  </button>
+                );
+              })}
+            </div>
+          )
+        ) : tab === 'planes' ? (
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
             {cat?.planes.map((p) => {
               const sel = lineas.some((l) => l.key === `m${p.id}`);
@@ -463,7 +546,7 @@ export default function Cobrar() {
             <div className="min-h-[90px] space-y-1 px-3 py-3">
               {lineas.length === 0 && (
                 <div className="px-2 py-4">
-                  <p className="text-center text-sm text-steel-500">Toca un plan o producto para agregarlo</p>
+                  <p className="text-center text-sm text-steel-500">Toca un plan, personalizado o producto para agregarlo</p>
                   <p className="mt-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-steel-600">
                     <Keyboard className="h-3.5 w-3.5" /> <span><b className="text-steel-400">F2</b> cliente</span> <span><b className="text-steel-400">F3</b> producto</span> <span><b className="text-steel-400">F8</b> gasto</span> <span><b className="text-steel-400">F9</b> ingreso</span>
                   </p>
@@ -477,6 +560,8 @@ export default function Cobrar() {
                   <div className="flex items-center gap-3">
                     {l.tipo === 'membresia' ? (
                       <CalendarCheck className="h-5 w-5 shrink-0" style={{ color: l.color }} />
+                    ) : l.tipo === 'personalizado' ? (
+                      <Award className="h-5 w-5 shrink-0 text-flame-400" />
                     ) : l.tipo === 'abono' ? (
                       <HandCoins className="h-5 w-5 shrink-0 text-sky-300" />
                     ) : (
@@ -488,7 +573,7 @@ export default function Cobrar() {
                         {fmt(l.precio, l.moneda)} {l.cantidad > 1 && `× ${l.cantidad} = ${fmt(l.precio * l.cantidad, l.moneda)}`}
                       </p>
                     </div>
-                    {l.tipo === 'producto' ? (
+                    {l.tipo === 'producto' || l.tipo === 'personalizado' ? (
                       <div className="flex items-center gap-1">
                         <button className="grid h-8 w-8 place-items-center rounded-lg bg-white/[0.05] hover:bg-white/10" onClick={() => cambiarCant(l.key, -1)}>
                           <Minus className="h-3.5 w-3.5" />
@@ -505,6 +590,7 @@ export default function Cobrar() {
                     )}
                   </div>
                   {l.acompanantes && l.acompanantes.length > 0 && <p className="ml-8 mt-1 text-xs text-steel-400">+ {l.acompanantes.map((a) => a.nombre).join(', ')}</p>}
+                  {l.tipo === 'personalizado' && l.ent && <LineaPersonalizado l={l} ficha={ficha} onPeriodo={(per) => cambiarPeriodo(l.key, per)} />}
                   {l.tipo === 'membresia' &&
                     (() => {
                       const p = cat?.planes.find((x) => x.id === l.id);
@@ -608,6 +694,11 @@ export default function Cobrar() {
               {m.personas > 1 && ` (${m.personas} personas)`}: del {fecha(m.fechaInicio)} al {fechaDia(m.fechaFin)}
             </p>
           ))}
+          {(exito.personalizados ?? []).map((p, i) => (
+            <p key={`pz${i}`} className="mt-3 rounded-xl border border-flame-500/25 bg-flame-500/[0.06] p-3 text-center text-sm text-flame-200">
+              Personalizado con <b>{p.entrenador}</b>: del {fecha(p.fechaInicio)} al {fechaDia(p.fechaFin)} — ya aparece en su app
+            </p>
+          ))}
           {exito.membresias.length > 0 && exito.cliente && (
             <div className="mt-3">
               <EstadoLector socioId={exito.cliente.id} />
@@ -615,6 +706,39 @@ export default function Cobrar() {
           )}
         </Modal>
       )}
+    </div>
+  );
+}
+
+/** Renglón del personalizado en el ticket: por mes o por semana, y hasta cuándo queda. */
+function LineaPersonalizado({ l, ficha, onPeriodo }: { l: Linea; ficha: SocioDetalle | undefined; onPeriodo: (p: 'meses' | 'semanas') => void }) {
+  const ent = l.ent!;
+  const actual = ficha?.personalizados?.find((p) => p.entrenadorId === l.entrenadorId);
+  // Igual que en el servidor: si sigue vigente con el mismo entrenador, continúa desde su vencimiento
+  const sigue = !!actual?.hasta && actual.hasta >= hoyISO() && actual.estado !== 'vencido';
+  const inicio = sigue ? sumarDias(actual!.hasta!, 1) : hoyISO();
+  const fin = finPlan({ tipoDuracion: l.periodo!, cantidad: l.cantidad }, inicio, sigue ? actual!.hasta : null);
+  const otro = ficha?.entrenadorId && ficha.entrenadorId !== l.entrenadorId ? ficha.personalizados?.find((x) => x.entrenadorId === ficha.entrenadorId)?.entrenador : null;
+  const unidad = (per: 'meses' | 'semanas') => (per === 'meses' ? (l.cantidad > 1 && l.periodo === per ? `${l.cantidad} meses` : 'Por mes') : l.cantidad > 1 && l.periodo === per ? `${l.cantidad} semanas` : 'Por semana');
+  return (
+    <div className="ml-8 mt-1 space-y-1.5">
+      <p className="text-xs font-bold text-flame-300">
+        {sigue ? `Sigue desde el ${fecha(inicio)} · ` : 'Desde hoy · '}vence el {fechaDia(fin)}
+      </p>
+      <div className="inline-flex rounded-lg bg-ink-950/60 p-0.5 text-[11px] font-bold">
+        {(['meses', 'semanas'] as const).map((per) => (
+          <button
+            key={per}
+            disabled={per === 'semanas' && !ent.semanal}
+            title={per === 'semanas' && !ent.semanal ? 'Este entrenador solo cobra por mes' : undefined}
+            onClick={() => onPeriodo(per)}
+            className={cx('rounded-md px-2.5 py-1 disabled:opacity-30', l.periodo === per ? 'bg-flame-500 text-ink-950' : 'text-steel-400')}
+          >
+            {unidad(per)}
+          </button>
+        ))}
+      </div>
+      {otro && <p className="text-[11px] text-warn">Hoy lo atiende {otro}: pasará a ser cliente de {ent.nombre}.</p>}
     </div>
   );
 }

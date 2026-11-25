@@ -28,7 +28,7 @@ import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { fechaHora, hace, hoyISO, hora, sumarDias } from '../lib/format';
 import type { BioEstado, EntrenadorHoy, Horario, TipoMarcacion } from '../lib/types';
-import { INFO, leerMonto, MONEDAS, type Moneda } from '../lib/monedas';
+import { fmt, INFO, leerMonto, MONEDAS, type Moneda } from '../lib/monedas';
 import { EntrenadorAvatar, EstadoEntrenador, fotoEntrenadorUrl } from './entrenadores';
 import { FotoCaptura } from './FotoCaptura';
 import { BioBadge, cx, Drawer, Field, Loading, Modal, Tabs, Toggle } from './ui';
@@ -49,6 +49,11 @@ export interface Entrenador {
   pagoTipo?: PagoTipo;
   pagoTarifa?: number;
   pagoMoneda?: Moneda;
+  /** Entrenamiento personalizado: tarifa por mes / semana, moneda y % para el entrenador */
+  personalizadoPrecio?: number | string | null;
+  personalizadoSemanal?: number | string | null;
+  personalizadoMoneda?: Moneda;
+  personalizadoComision?: number | string;
   /** App de entrenadores */
   usuario?: string | null;
   tieneAcceso?: boolean;
@@ -165,12 +170,19 @@ export function EntrenadorEditor({ e, onClose, onGuardado }: { e: Entrenador | n
     pagoTipo: (e?.pagoTipo ?? 'ninguno') as PagoTipo,
     pagoTarifa: e?.pagoTarifa ? String(Number(e.pagoTarifa)) : '',
     pagoMoneda: (e?.pagoMoneda ?? 'USD') as Moneda,
+    pzActivo: !!(e?.personalizadoPrecio && Number(e.personalizadoPrecio) > 0),
+    pzPrecio: e?.personalizadoPrecio ? String(Number(e.personalizadoPrecio)) : '',
+    pzSemanal: e?.personalizadoSemanal ? String(Number(e.personalizadoSemanal)) : '',
+    pzMoneda: (e?.personalizadoMoneda ?? 'USD') as Moneda,
+    pzComision: e?.personalizadoComision !== undefined ? String(Number(e.personalizadoComision)) : '100',
   });
   const [verPin, setVerPin] = useState(nuevo);
   const [horario, setHorario] = useState<Horario>(e?.horario ?? { '1': { entrada: '06:00', salida: '14:00' }, '2': { entrada: '06:00', salida: '14:00' }, '3': { entrada: '06:00', salida: '14:00' }, '4': { entrada: '06:00', salida: '14:00' }, '5': { entrada: '06:00', salida: '14:00' } });
   const [foto, setFoto] = useState<string | null | undefined>(undefined);
 
-  const datosOk = f.nombre.trim().length >= 2 && (nuevo ? /^\d{4,6}$/.test(f.pin) : f.pin === '' || /^\d{4,6}$/.test(f.pin));
+  const comision = Number(f.pzComision.replace(',', '.'));
+  const pzOk = !f.pzActivo || (leerMonto(f.pzPrecio) > 0 && comision >= 0 && comision <= 100);
+  const datosOk = pzOk && f.nombre.trim().length >= 2 && (nuevo ? /^\d{4,6}$/.test(f.pin) : f.pin === '' || /^\d{4,6}$/.test(f.pin));
   const m = useMutation({
     mutationFn: () => {
       const body = {
@@ -185,6 +197,10 @@ export function EntrenadorEditor({ e, onClose, onGuardado }: { e: Entrenador | n
         pagoTipo: f.pagoTipo,
         pagoTarifa: f.pagoTipo === 'ninguno' ? 0 : leerMonto(f.pagoTarifa),
         pagoMoneda: f.pagoMoneda,
+        personalizadoPrecio: f.pzActivo ? leerMonto(f.pzPrecio) : null,
+        personalizadoSemanal: f.pzActivo && leerMonto(f.pzSemanal) > 0 ? leerMonto(f.pzSemanal) : null,
+        personalizadoMoneda: f.pzMoneda,
+        personalizadoComision: Number.isFinite(comision) ? comision : 100,
         ...(foto !== undefined && { foto }),
       };
       return e ? api<{ ok: true }>(`/entrenadores/${e.id}`, { method: 'PUT', body }).then(() => ({ id: e.id, codigo: e.codigo })) : api<{ id: string; codigo: number }>('/entrenadores', { body });
@@ -320,6 +336,51 @@ export function EntrenadorEditor({ e, onClose, onGuardado }: { e: Entrenador | n
                 <input className="input tnum w-40" inputMode="decimal" placeholder="Monto" value={f.pagoTarifa} onChange={(ev) => setF({ ...f, pagoTarifa: ev.target.value })} />
                 <Tabs value={f.pagoMoneda} onChange={(v) => setF({ ...f, pagoMoneda: v })} items={MONEDAS.map((x) => ({ value: x, label: INFO[x].simbolo }))} />
                 <span className="text-sm text-steel-400">{TIPOS_PAGO.find((t) => t.value === f.pagoTipo)?.unidad}</span>
+              </div>
+            )}
+          </div>
+          <div className={cx('rounded-2xl border p-4 sm:col-span-2', f.pzActivo ? 'border-flame-500/25 bg-flame-500/[0.03]' : 'border-white/[0.06]')}>
+            <Toggle
+              checked={f.pzActivo}
+              onChange={(v) => setF({ ...f, pzActivo: v })}
+              label="Da entrenamiento personalizado"
+              hint="Se cobra en caja (Cobrar › Personalizado). El cliente queda como suyo y lo ve en su app."
+            />
+            {f.pzActivo && (
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <Field label="Precio por mes *">
+                  <div className="flex gap-2">
+                    <input className="input tnum flex-1" inputMode="decimal" placeholder="Ej.: 40" value={f.pzPrecio} onChange={(ev) => setF({ ...f, pzPrecio: ev.target.value })} />
+                    <Tabs value={f.pzMoneda} onChange={(v) => setF({ ...f, pzMoneda: v })} items={MONEDAS.map((x) => ({ value: x, label: INFO[x].simbolo }))} />
+                  </div>
+                </Field>
+                <Field label="Precio por semana" hint="Opcional. Vacío = solo cobra por mes.">
+                  <input className="input tnum" inputMode="decimal" placeholder="Ej.: 12" value={f.pzSemanal} onChange={(ev) => setF({ ...f, pzSemanal: ev.target.value })} />
+                </Field>
+                <Field label="Le corresponde al entrenador" hint="Porcentaje de lo que paga el cliente que entra a su pago.">
+                  <div className="flex items-center gap-2">
+                    <input className="input tnum w-24" inputMode="decimal" value={f.pzComision} onChange={(ev) => setF({ ...f, pzComision: ev.target.value.replace(/[^\d.,]/g, '') })} />
+                    <span className="text-steel-400">%</span>
+                    {[100, 80, 70, 50].map((n) => (
+                      <button key={n} type="button" onClick={() => setF({ ...f, pzComision: String(n) })} className={cx('chip cursor-pointer', comision === n ? 'border-flame-500/50 bg-flame-500/10 text-flame-300' : 'border-white/10 text-steel-400')}>
+                        {n}%
+                      </button>
+                    ))}
+                  </div>
+                </Field>
+                {f.pagoTipo === 'ninguno' && (
+                  <Field label="Se le paga en" hint="Moneda en que recibe lo de sus personalizados.">
+                    <Tabs value={f.pagoMoneda} onChange={(v) => setF({ ...f, pagoMoneda: v })} items={MONEDAS.map((x) => ({ value: x, label: INFO[x].simbolo }))} />
+                  </Field>
+                )}
+                {leerMonto(f.pzPrecio) > 0 && comision >= 0 && comision <= 100 && (
+                  <p className="rounded-xl bg-ink-950/50 p-3 text-sm text-steel-300 sm:col-span-2">
+                    Por cada mes que cobre la caja ({fmt(leerMonto(f.pzPrecio), f.pzMoneda)}), al entrenador le tocan{' '}
+                    <b className="text-flame-300">{fmt(Math.round(leerMonto(f.pzPrecio) * comision) / 100, f.pzMoneda)}</b>
+                    {comision < 100 && <> y al gimnasio {fmt(Math.round(leerMonto(f.pzPrecio) * (100 - comision)) / 100, f.pzMoneda)}</>}.
+                  </p>
+                )}
+                {!pzOk && <p className="text-xs text-warn sm:col-span-2">Escribe el precio por mes y un porcentaje entre 0 y 100.</p>}
               </div>
             )}
           </div>

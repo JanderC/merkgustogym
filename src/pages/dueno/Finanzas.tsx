@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { BarSerie } from '../../components/charts';
 import { BotonExcel } from '../../components/BotonExcel';
 import { cx, Empty, Field, Loading, Modal, PageHeader, Stat, Tabs } from '../../components/ui';
+import { Paginacion, Th, useTabla } from '../../components/Tabla';
 import { api } from '../../lib/api';
 import { fecha, fechaCorta, fechaHora, hoyISO, money, moneySigned, sumarDias } from '../../lib/format';
 import { fmt, INFO, type Moneda } from '../../lib/monedas';
@@ -51,6 +52,28 @@ export default function Finanzas() {
   const { data: r, isLoading } = useQuery({ queryKey: ['finanzas', desde, hasta], queryFn: () => api<Resumen>('/finanzas/resumen', { query: { desde, hasta } }) });
   const { data: movs } = useQuery({ queryKey: ['movimientos', desde, hasta], queryFn: () => api<Movimiento[]>('/caja/movimientos', { query: { desde, hasta } }) });
   const { data: deudas } = useQuery({ queryKey: ['deudas'], queryFn: () => api<DeudaFila[]>('/caja/deudas') });
+  const tm = useTabla(
+    movs,
+    {
+      fecha: { label: 'Fecha', valor: (m) => m.creadoEn },
+      concepto: { label: 'Concepto', valor: (m) => m.concepto },
+      categoria: { label: 'Categoría', valor: (m) => m.categoria },
+      metodo: { label: 'Método', valor: (m) => m.metodoNombre },
+      monto: { label: 'Monto', valor: (m) => (m.tipo === 'egreso' ? -1 : 1) * Number(m.montoRef) },
+      quien: { label: 'Quién', valor: (m) => m.usuario },
+    },
+    { id: 'finanzas-movs', orden: { col: 'fecha', dir: 'desc' } },
+  );
+  const td = useTabla(
+    deudas,
+    {
+      cliente: { label: 'Cliente', valor: (d) => d.socio },
+      concepto: { label: 'Concepto', valor: (d) => d.concepto },
+      desde: { label: 'Desde', valor: (d) => d.creadoEn },
+      saldo: { label: 'Saldo', valor: (d) => Number(d.saldo) },
+    },
+    { id: 'finanzas-deudas', orden: { col: 'desde', dir: 'asc' } },
+  );
 
   const elegir = (k: keyof typeof rangos | 'custom') => {
     setRango(k);
@@ -232,16 +255,16 @@ export default function Finanzas() {
               <table className="table-base">
                 <thead>
                   <tr>
-                    <th>Fecha</th>
-                    <th>Concepto</th>
-                    <th>Método</th>
-                    <th className="text-right">Monto</th>
-                    <th>Quién</th>
+                    <th><Th t={tm} col="fecha" /></th>
+                    <th><Th t={tm} col="concepto" /></th>
+                    <th><Th t={tm} col="metodo" /></th>
+                    <th className="text-right"><Th t={tm} col="monto" /></th>
+                    <th><Th t={tm} col="quien" /></th>
                     <th />
                   </tr>
                 </thead>
                 <tbody>
-                  {movs.map((m) => (
+                  {tm.visibles.map((m) => (
                     <tr key={m.id} className={cx(m.anulado && 'opacity-40')}>
                       <td className="text-steel-400">{fechaHora(m.creadoEn)}</td>
                       <td>
@@ -279,6 +302,7 @@ export default function Finanzas() {
                   ))}
                 </tbody>
               </table>
+              <Paginacion t={tm} />
             </div>
           )
         ) : !deudas?.length ? (
@@ -288,14 +312,14 @@ export default function Finanzas() {
             <table className="table-base">
               <thead>
                 <tr>
-                  <th>Cliente</th>
-                  <th>Concepto</th>
-                  <th>Desde</th>
-                  <th className="text-right">Saldo</th>
+                  <th><Th t={td} col="cliente" /></th>
+                  <th><Th t={td} col="concepto" /></th>
+                  <th><Th t={td} col="desde" /></th>
+                  <th className="text-right"><Th t={td} col="saldo" /></th>
                 </tr>
               </thead>
               <tbody>
-                {deudas.map((d) => (
+                {td.visibles.map((d) => (
                   <tr key={d.id}>
                     <td>
                       <p className="font-bold text-steel-100">{d.socio}</p>
@@ -308,6 +332,7 @@ export default function Finanzas() {
                 ))}
               </tbody>
             </table>
+            <Paginacion t={td} />
           </div>
         )}
       </div>

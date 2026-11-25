@@ -1,4 +1,4 @@
-import { ArrowLeftRight, BarChart3, Boxes, CalendarClock, CalendarDays, ClipboardList, DoorOpen, Dumbbell, Gauge, KeyRound, LogOut, Menu, MessageCircle, Monitor, Radio, Receipt, ScanFace, Settings, ShoppingCart, Store, Timer, UserCog, Users, Vault, Wallet, Warehouse, X } from 'lucide-react';
+import { ArrowLeftRight, Award, BarChart3, Boxes, CalendarClock, CalendarDays, ClipboardList, DoorOpen, Dumbbell, Gauge, KeyRound, LogOut, Menu, MessageCircle, Monitor, Radio, Receipt, ScanFace, Settings, ShoppingCart, Store, Timer, UserCog, Users, Vault, Wallet, Warehouse, X } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
@@ -31,6 +31,7 @@ const mostradorNav = [
   { to: '/mostrador/entradas', label: 'Entradas', icon: DoorOpen },
   { to: '/mostrador/clientes', label: 'Clientes', icon: Users },
   { to: '/mostrador/membresias', label: 'Membresías', icon: CalendarClock },
+  { to: '/mostrador/personalizados', label: 'Personalizados', icon: Award },
   { to: '/mostrador/clases', label: 'Clases', icon: CalendarDays },
   { to: '/mostrador/entrenadores', label: 'Entrenadores', icon: Dumbbell },
   { to: '/mostrador/turno', label: 'Mi turno', icon: Timer },
@@ -111,6 +112,7 @@ const panelNav: Array<{ grupo: string; items: ItemNav[] }> = [
     items: [
       { to: '/panel/clientes', label: 'Clientes', icon: Users },
       { to: '/panel/membresias', label: 'Membresías', icon: CalendarClock },
+      { to: '/panel/personalizados', label: 'Personalizados', icon: Award },
       { to: '/panel/clases', label: 'Clases', icon: CalendarDays },
       { to: '/panel/asistencia', label: 'Asistencia', icon: ClipboardList },
       { to: '/panel/entrenadores', label: 'Entrenadores', icon: Dumbbell },

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarPlus, Gift, HandCoins, Pencil, RefreshCw, Search, Snowflake, UserPlus, UserX, UserCheck } from 'lucide-react';
+import { Award, CalendarPlus, Gift, HandCoins, Pencil, RefreshCw, Search, Snowflake, UserPlus, UserX, UserCheck } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -9,6 +10,7 @@ import { useCatalogo } from '../lib/hooks';
 import { fmt } from '../lib/monedas';
 import type { SocioDetalle, SocioLista } from '../lib/types';
 import { DatosRapidos, datosOk, EstadoLector } from './ClienteNuevo';
+import { EstadoPz } from '../pages/cajero/Personalizados';
 import { FotoCaptura } from './FotoCaptura';
 import { ProgresoSocio } from './Progreso';
 import { Avatar, BioBadge, cx, Drawer, Field, Loading, Modal, NumInput, VigenciaBadge } from './ui';
@@ -370,6 +372,32 @@ export function SocioDrawer({ socioId, onClose, onCobrar }: { socioId: string; o
             );
           })}
         </div>
+
+        {(s.personalizados ?? []).length > 0 && (
+          <>
+            <h4 className="label mt-7">Entrenamiento personalizado</h4>
+            <div className="space-y-2">
+              {s.personalizados!.map((p) => (
+                <div key={p.entrenadorId} className="flex flex-wrap items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
+                  <Award className="h-5 w-5 text-flame-400" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold text-steel-100">Con {p.entrenador}</p>
+                    <p className="text-xs text-steel-500">
+                      {p.estadoTexto}
+                      {p.hasta && ` · pagado hasta ${fecha(p.hasta)}`}
+                    </p>
+                  </div>
+                  <EstadoPz estado={p.estado} />
+                  {p.estado !== 'debe' && (
+                    <Link to={`/mostrador?cliente=${s.id}&personalizado=${p.entrenadorId}`} className="btn-ghost btn-sm">
+                      Renovar
+                    </Link>
+                  )}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
 
         {s.deudas.length > 0 && (
           <>

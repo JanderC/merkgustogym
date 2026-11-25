@@ -78,6 +78,33 @@ export interface SocioDetalle {
   membresias: MembresiaCliente[];
   asistencias: Array<{ id: number; fechaHora: string; origen: string; resultado: 'permitido' | 'denegado'; motivo: string | null; alerta: string | null }>;
   deudas: Deuda[];
+  /** Entrenamiento personalizado del cliente (con cada entrenador) */
+  personalizados?: PersonalizadoSocio[];
+  entrenadorId?: string | null;
+}
+
+export type EstadoPersonalizado = 'al_dia' | 'vence' | 'vencido' | 'debe' | 'por_empezar' | 'sin_pago';
+
+export interface PersonalizadoSocio {
+  entrenadorId: string;
+  entrenador: string;
+  estado: EstadoPersonalizado;
+  estadoTexto: string;
+  desde: string | null;
+  hasta: string | null;
+  diasRestantes: number;
+  deudaTexto: string | null;
+}
+
+/** Entrenador que se puede cobrar como personalizado en caja. */
+export interface EntrenadorPersonalizado {
+  id: string;
+  nombre: string;
+  especialidad: string | null;
+  tieneFoto: boolean;
+  moneda: Moneda;
+  mensual: number;
+  semanal: number | null;
 }
 
 export type TipoDuracion = 'dias' | 'semanas' | 'meses' | 'anios';
@@ -139,6 +166,8 @@ export interface Catalogo {
   categorias: { egreso: string[]; ingreso: string[] };
   /** Ids de los productos más vendidos (venta rápida) */
   masVendidos?: number[];
+  /** Entrenadores con tarifa de personalizado */
+  entrenadores?: EntrenadorPersonalizado[];
 }
 
 export interface TurnoCiego {

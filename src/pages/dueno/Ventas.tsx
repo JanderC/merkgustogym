@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ban, LockKeyhole, Receipt, Search, Undo2 } from 'lucide-react';
 import { useState } from 'react';
 import { cx, Empty, Field, Loading, PageHeader, Tabs } from '../../components/ui';
+import { Paginacion, Th, useTabla } from '../../components/Tabla';
 import { api } from '../../lib/api';
 import { fechaHora, hoyISO, money } from '../../lib/format';
 import { AnularVenta } from './Cierres';
@@ -39,6 +40,17 @@ interface Devolucion {
 function Devoluciones({ desde, hasta }: { desde: string; hasta: string }) {
   const { data, isLoading } = useQuery({ queryKey: ['devoluciones', desde, hasta], queryFn: () => api<Devolucion[]>('/caja/devoluciones', { query: { desde, hasta } }) });
   const total = (data ?? []).reduce((s, d) => s + d.montoRef, 0);
+  const t = useTabla(
+    data,
+    {
+      fecha: { label: 'Fecha', valor: (d) => d.creadoEn },
+      ticket: { label: 'Ticket', valor: (d) => d.ticket },
+      cajero: { label: 'Pidió', valor: (d) => d.cajero },
+      autorizo: { label: 'Autorizó', valor: (d) => d.autorizo },
+      monto: { label: 'Monto', valor: (d) => d.montoRef },
+    },
+    { id: 'devoluciones', orden: { col: 'fecha', dir: 'desc' } },
+  );
   return (
     <div className="card overflow-hidden">
       {isLoading ? (
@@ -50,15 +62,15 @@ function Devoluciones({ desde, hasta }: { desde: string; hasta: string }) {
           <table className="table-base">
             <thead>
               <tr>
-                <th>Fecha</th>
+                <th><Th t={t} col="fecha" /></th>
                 <th>Productos devueltos</th>
-                <th>Pidió · Autorizó</th>
+                <th><Th t={t} col="cajero">Pidió · Autorizó</Th></th>
                 <th>Entregado</th>
-                <th className="text-right">Monto</th>
+                <th className="text-right"><Th t={t} col="monto" /></th>
               </tr>
             </thead>
             <tbody>
-              {data.map((d) => (
+              {t.visibles.map((d) => (
                 <tr key={d.id}>
                   <td>
                     <p className="font-bold text-steel-100">Ticket #{d.ticket}</p>
@@ -83,6 +95,7 @@ function Devoluciones({ desde, hasta }: { desde: string; hasta: string }) {
               ))}
             </tbody>
           </table>
+          <Paginacion t={t} />
           <p className="border-t border-white/[0.06] px-5 py-3 text-right text-sm text-steel-400">
             Total devuelto: <b className="tnum text-white">{money(total)}</b>
           </p>
@@ -106,6 +119,18 @@ export default function Ventas() {
     queryFn: () => api<Venta[]>('/caja/ventas', { query: { desde, hasta, estado: estado || undefined, buscar: buscar.trim() || undefined } }),
   });
   const total = (data ?? []).filter((v) => v.estado === 'pagada').reduce((s, v) => s + Number(v.totalRef), 0);
+  const t = useTabla(
+    data,
+    {
+      numero: { label: 'Ticket', valor: (v) => v.numero },
+      fecha: { label: 'Fecha', valor: (v) => v.creadoEn },
+      cliente: { label: 'Cliente', valor: (v) => v.socio },
+      cajero: { label: 'Cajera', valor: (v) => v.cajero },
+      pago: { label: 'Pago', valor: (v) => v.pagos },
+      total: { label: 'Total', valor: (v) => Number(v.totalRef) },
+    },
+    { id: 'ventas', orden: { col: 'numero', dir: 'desc' } },
+  );
 
   return (
     <div>
@@ -151,16 +176,16 @@ export default function Ventas() {
             <table className="table-base">
               <thead>
                 <tr>
-                  <th>Ticket</th>
-                  <th>Detalle</th>
-                  <th>Cajera</th>
-                  <th>Pago</th>
-                  <th className="text-right">Total</th>
+                  <th><Th t={t} col="numero" /></th>
+                  <th><Th t={t} col="cliente">Detalle</Th></th>
+                  <th><Th t={t} col="cajero" /></th>
+                  <th><Th t={t} col="pago" /></th>
+                  <th className="text-right"><Th t={t} col="total" /></th>
                   <th />
                 </tr>
               </thead>
               <tbody>
-                {data.map((v) => (
+                {t.visibles.map((v) => (
                   <tr key={v.id} className={cx(v.estado === 'anulada' && 'opacity-50')}>
                     <td>
                       <p className="font-bold text-steel-100">#{v.numero}</p>
@@ -188,6 +213,7 @@ export default function Ventas() {
                 ))}
               </tbody>
             </table>
+            <Paginacion t={t} />
           </div>
         )}
       </div>

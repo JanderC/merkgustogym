@@ -38,6 +38,7 @@ export interface VentaHecha {
   deuda: { id: number; saldo: number; texto: string } | null;
   items: Array<{ descripcion: string; cantidad: number; precio: string }>;
   membresias: Array<{ plan: string; fechaInicio: string; fechaFin: string; personas: number }>;
+  personalizados?: Array<{ entrenador: string; fechaInicio: string; fechaFin: string }>;
 }
 
 // ── Registro rápido: cédula, nombre y teléfono obligatorios ──────────

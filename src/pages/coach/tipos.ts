@@ -1,7 +1,19 @@
 import type { Medicion, Rutina } from '../../components/Progreso';
+import type { EstadoPersonalizado } from '../../lib/types';
+
+/** Personalizado del cliente con este entrenador. */
+export interface PersonalizadoCoach {
+  estado: EstadoPersonalizado;
+  texto: string;
+  desde: string | null;
+  hasta: string | null;
+  diasRestantes: number;
+  deudaTexto: string | null;
+  ultimoPago: { fecha: string; duracion: string; precioTexto: string } | null;
+}
 
 export interface Alerta {
-  tipo: 'vence' | 'vencido' | 'ausente' | 'sin_rutina' | 'medir';
+  tipo: 'vence' | 'vencido' | 'ausente' | 'sin_rutina' | 'medir' | 'personalizado';
   texto: string;
 }
 
@@ -46,6 +58,7 @@ export interface ClienteCoach {
   ultimaMedicion: string | null;
   rutina: string | null;
   entrenosSemana: number;
+  personalizado: PersonalizadoCoach | null;
   alertas: Alerta[];
 }
 

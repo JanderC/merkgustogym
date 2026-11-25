@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { AbrirPuerta } from '../../components/AbrirPuerta';
 import { SocioPicker } from '../../components/socios';
+import { Paginacion, useTabla } from '../../components/Tabla';
 import { Avatar, cx, Empty, PageHeader } from '../../components/ui';
 import { api } from '../../lib/api';
 import { fecha, hora } from '../../lib/format';
@@ -16,10 +17,20 @@ interface DiaAsistencia {
 }
 
 export function FeedAsistencia({ items }: { items: Asistencia[] }) {
+  const t = useTabla(
+    items,
+    {
+      hora: { label: 'Hora', valor: (a) => `${a.fechaHora} ${String(a.id).padStart(12, '0')}` },
+      nombre: { label: 'Nombre', valor: (a) => a.socio ?? a.employeeNo },
+      resultado: { label: 'Resultado', valor: (a) => a.resultado },
+      origen: { label: 'Cómo entró', valor: (a) => a.origen },
+    },
+    { id: 'entradas', orden: { col: 'hora', dir: 'desc' }, porPagina: 25 },
+  );
   if (!items.length) return <Empty icon={<ScanFace className="h-7 w-7" />} title="Nadie ha entrado todavía" hint="Las entradas del lector facial aparecen aquí al instante." />;
   return (
     <div className="divide-y divide-white/[0.04]">
-      {items.map((a) => (
+      {t.visibles.map((a) => (
         <div key={a.id} className="flex animate-rise items-center gap-3 px-4 py-3">
           <Avatar socioId={a.socioId} nombre={a.socio ?? '?'} tieneFoto={a.tieneFoto} size={40} ring={a.resultado === 'permitido' ? 'ok' : 'bad'} />
           <div className="min-w-0 flex-1">
@@ -37,6 +48,7 @@ export function FeedAsistencia({ items }: { items: Asistencia[] }) {
           </div>
         </div>
       ))}
+      <Paginacion t={t} />
     </div>
   );
 }

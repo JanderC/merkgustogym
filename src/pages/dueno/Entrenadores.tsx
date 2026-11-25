@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { EquipoEntrenadores, tipoCls, type FilaReporte, type Marcacion, type Permiso } from '../../components/EntrenadorGestion';
 import { NominaEntrenadores } from '../../components/NominaEntrenadores';
 import { cx, Empty, Field, Loading, Modal, PageHeader, Tabs } from '../../components/ui';
+import { Paginacion, Th, useTabla } from '../../components/Tabla';
 import { api } from '../../lib/api';
 import { fecha, fechaHora, hoyISO, sumarDias } from '../../lib/format';
 import { archivoUrl } from './Cierres';
@@ -45,6 +46,16 @@ function Marcaciones() {
   const [hasta, setHasta] = useState(hoyISO());
   const [foto, setFoto] = useState<number | null>(null);
   const { data, isLoading } = useQuery({ queryKey: ['marcaciones', desde, hasta], queryFn: () => api<Marcacion[]>('/entrenadores/marcaciones', { query: { desde, hasta } }) });
+  const t = useTabla(
+    data,
+    {
+      entrenador: { label: 'Entrenador', valor: (m) => m.entrenador },
+      tipo: { label: 'Marcó', valor: (m) => m.tipo },
+      cuando: { label: 'Cuándo', valor: (m) => m.fechaHora },
+      origen: { label: 'Detalle', valor: (m) => m.origen },
+    },
+    { id: 'marcaciones', orden: { col: 'cuando', dir: 'desc' } },
+  );
   const anular = useMutation({
     mutationFn: (id: number) => api(`/entrenadores/marcaciones/${id}/anular`, { body: {} }),
     onSuccess: () => (toast.success('Marcación anulada'), void qc.invalidateQueries({ queryKey: ['marcaciones'] })),
@@ -70,15 +81,15 @@ function Marcaciones() {
             <thead>
               <tr>
                 <th>Foto</th>
-                <th>Entrenador</th>
-                <th>Marcó</th>
-                <th>Cuándo</th>
-                <th>Detalle</th>
+                <th><Th t={t} col="entrenador" /></th>
+                <th><Th t={t} col="tipo" /></th>
+                <th><Th t={t} col="cuando" /></th>
+                <th><Th t={t} col="origen" /></th>
                 <th />
               </tr>
             </thead>
             <tbody>
-              {data.map((m) => (
+              {t.visibles.map((m) => (
                 <tr key={m.id} className={cx(m.anulada && 'opacity-40 line-through')}>
                   <td>
                     {m.fotoId ? (
@@ -110,6 +121,7 @@ function Marcaciones() {
             </tbody>
           </table>
         )}
+        <Paginacion t={t} />
       </div>
       {foto && (
         <Modal title="Foto de la marcación" size="sm" onClose={() => setFoto(null)}>
@@ -124,6 +136,16 @@ function Permisos() {
   const qc = useQueryClient();
   const [estado, setEstado] = useState<'pendiente' | 'todos'>('pendiente');
   const { data, isLoading } = useQuery({ queryKey: ['permisos', estado], queryFn: () => api<Permiso[]>('/entrenadores/permisos', { query: { estado } }) });
+  const t = useTabla(
+    data,
+    {
+      desde: { label: 'Fecha', valor: (p) => p.desde },
+      entrenador: { label: 'Entrenador', valor: (p) => p.entrenador },
+      tipo: { label: 'Tipo', valor: (p) => p.tipo },
+      estado: { label: 'Estado', valor: (p) => p.estado },
+    },
+    { id: 'permisos', orden: { col: 'desde', dir: 'desc' }, porPagina: 10 },
+  );
   const resolver = useMutation({
     mutationFn: (a: { id: number; estado: 'aprobado' | 'rechazado' }) => api(`/entrenadores/permisos/${a.id}/resolver`, { body: { estado: a.estado } }),
     onSuccess: (_r, a) => (toast.success(a.estado === 'aprobado' ? 'Permiso aprobado' : 'Permiso rechazado'), void qc.invalidateQueries({ queryKey: ['permisos'] })),
@@ -146,8 +168,9 @@ function Permisos() {
       ) : !data?.length ? (
         <Empty icon={<FileText className="h-7 w-7" />} title="No hay permisos" />
       ) : (
+        <>
         <div className="grid gap-4 md:grid-cols-2">
-          {data.map((p) => (
+          {t.visibles.map((p) => (
             <div key={p.id} className="plate p-5 pt-6">
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -182,6 +205,8 @@ function Permisos() {
             </div>
           ))}
         </div>
+        <Paginacion t={t} className="card mt-4" />
+        </>
       )}
     </div>
   );
@@ -191,6 +216,20 @@ function Reporte() {
   const [desde, setDesde] = useState(hoyISO().slice(0, 8) + '01');
   const [hasta, setHasta] = useState(hoyISO());
   const { data, isLoading } = useQuery({ queryKey: ['reporte-ent', desde, hasta], queryFn: () => api<FilaReporte[]>('/entrenadores/reporte', { query: { desde, hasta } }) });
+  const t = useTabla(
+    data,
+    {
+      nombre: { label: 'Entrenador', valor: (r) => r.nombre },
+      dias: { label: 'Días', valor: (r) => r.diasTrabajados },
+      horas: { label: 'Horas', valor: (r) => r.horas },
+      tardanzas: { label: 'Tardanzas', valor: (r) => r.tardanzas },
+      salidas: { label: 'Salidas antes', valor: (r) => r.salidasTempranas },
+      retiros: { label: 'Retiros', valor: (r) => r.retiros },
+      permisos: { label: 'Permisos', valor: (r) => r.diasPermiso },
+      ausencias: { label: 'Ausencias', valor: (r) => r.ausencias },
+    },
+    { id: 'reporte-entrenadores', orden: { col: 'nombre', dir: 'asc' } },
+  );
   return (
     <div>
       <div className="mb-4 flex gap-3">
@@ -208,18 +247,18 @@ function Reporte() {
           <table className="table-base">
             <thead>
               <tr>
-                <th>Entrenador</th>
-                <th className="text-right">Días</th>
-                <th className="text-right">Horas</th>
-                <th className="text-right">Tardanzas</th>
-                <th className="text-right">Salidas antes</th>
-                <th className="text-right">Retiros</th>
-                <th className="text-right">Permisos</th>
-                <th className="text-right">Ausencias</th>
+                <th><Th t={t} col="nombre" /></th>
+                <th className="text-right"><Th t={t} col="dias" /></th>
+                <th className="text-right"><Th t={t} col="horas" /></th>
+                <th className="text-right"><Th t={t} col="tardanzas" /></th>
+                <th className="text-right"><Th t={t} col="salidas" /></th>
+                <th className="text-right"><Th t={t} col="retiros" /></th>
+                <th className="text-right"><Th t={t} col="permisos" /></th>
+                <th className="text-right"><Th t={t} col="ausencias" /></th>
               </tr>
             </thead>
             <tbody>
-              {data?.map((r) => (
+              {t.visibles.map((r) => (
                 <tr key={r.id}>
                   <td className="font-bold text-steel-100">{r.nombre}</td>
                   <td className="tnum text-right">{r.diasTrabajados}</td>
@@ -239,6 +278,7 @@ function Reporte() {
             </tbody>
           </table>
         )}
+        <Paginacion t={t} />
       </div>
     </div>
   );

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { SocioPicker } from '../../components/socios';
 import { cx, Loading, PageHeader, Tabs, Toggle } from '../../components/ui';
+import { Paginacion, Th, useTabla } from '../../components/Tabla';
 import { api } from '../../lib/api';
 import { fechaHora, hace } from '../../lib/format';
 import type { EntrenadorHoy, ResultadoAcceso, SocioLista } from '../../lib/types';
@@ -54,6 +55,17 @@ export default function Biometrico() {
   const qc = useQueryClient();
   const { data: st, isLoading } = useQuery({ queryKey: ['bio-status'], queryFn: () => api<Estado>('/biometric/status'), refetchInterval: 5000 });
   const { data: cola } = useQuery({ queryKey: ['bio-cola'], queryFn: () => api<ItemCola[]>('/biometric/cola'), refetchInterval: 5000 });
+  const tc = useTabla(
+    cola,
+    {
+      cliente: { label: 'Cliente', valor: (c) => c.socio },
+      operacion: { label: 'Operación', valor: (c) => opLabel[c.operacion] ?? c.operacion },
+      estado: { label: 'Estado', valor: (c) => c.estado },
+      intentos: { label: 'Intentos', valor: (c) => c.intentos },
+      fecha: { label: 'Actualizado', valor: (c) => c.actualizadoEn },
+    },
+    { id: 'bio-cola', orden: { col: 'fecha', dir: 'desc' } },
+  );
   const esMock = st?.mode === 'mock';
   const { data: mockUsers } = useQuery({ queryKey: ['bio-mock'], enabled: esMock, queryFn: () => api<MockUser[]>('/biometric/simulador/usuarios'), refetchInterval: 5000 });
   const [socio, setSocio] = useState<SocioLista | null>(null);
@@ -273,15 +285,15 @@ export default function Biometrico() {
             <RotateCcw className="h-4 w-4" /> Reintentar fallidas
           </button>
         </div>
-        <div className="max-h-[420px] overflow-y-auto">
+        <div className="overflow-x-auto">
           <table className="table-base">
             <thead>
               <tr>
-                <th>Cliente</th>
-                <th>Operación</th>
-                <th>Estado</th>
-                <th>Intentos</th>
-                <th>Detalle</th>
+                <th><Th t={tc} col="cliente" /></th>
+                <th><Th t={tc} col="operacion" /></th>
+                <th><Th t={tc} col="estado" /></th>
+                <th><Th t={tc} col="intentos" /></th>
+                <th><Th t={tc} col="fecha">Detalle</Th></th>
               </tr>
             </thead>
             <tbody>
@@ -292,7 +304,7 @@ export default function Biometrico() {
                   </td>
                 </tr>
               )}
-              {cola?.map((c) => (
+              {tc.visibles.map((c) => (
                 <tr key={c.id}>
                   <td className="font-bold text-steel-100">
                     {c.socio ?? '—'} {c.codigo && <span className="text-xs text-steel-500">#{c.codigo}</span>}
@@ -310,6 +322,7 @@ export default function Biometrico() {
             </tbody>
           </table>
         </div>
+        <Paginacion t={tc} />
       </div>
     </div>
   );

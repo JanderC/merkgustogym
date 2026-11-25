@@ -3,6 +3,7 @@ import { ArrowDown, ArrowDownRight, ArrowUpRight, Calculator, Landmark, RefreshC
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { cx, Loading, PageHeader, Tabs } from '../../components/ui';
+import { Paginacion, Th, useTabla } from '../../components/Tabla';
 import { api } from '../../lib/api';
 import { fechaHora } from '../../lib/format';
 import { convertir, fmt, INFO, leerMonto, MONEDAS, redondear, redondearArriba, tasasDesdeTablero, type Moneda, type Tasas } from '../../lib/monedas';
@@ -45,6 +46,17 @@ const r2 = (v: number) => Math.round(v * 100) / 100;
 export default function TasasPage() {
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ['tasas'], queryFn: () => api<Respuesta>('/tasas') });
+  const th_ = useTabla(
+    data?.historial,
+    {
+      fecha: { label: 'Fecha', valor: (h) => `${h.creadoEn} ${String(h.id).padStart(10, '0')}` },
+      dolar: { label: 'Dólar', valor: (h) => h.dolar },
+      bs: { label: 'Bs', valor: (h) => h.bs },
+      bsPorDolar: { label: '$1 en Bs', valor: (h) => h.dolar / h.bs },
+      quien: { label: 'Quién', valor: (h) => h.creadoPor ?? h.nota },
+    },
+    { id: 'tasas', orden: { col: 'fecha', dir: 'desc' }, porPagina: 10 },
+  );
   const { data: cat } = useQuery({ queryKey: ['catalogo'], queryFn: () => api<Catalogo>('/pos/catalogo') });
   const { data: ext, refetch: recargarExt, isFetching } = useQuery({ queryKey: ['tasas-ext'], queryFn: () => api<Externas>('/tasas/externas') });
   const [f, setF] = useState({ dolar: '', bs: '' });
@@ -200,19 +212,19 @@ export default function TasasPage() {
             <TrendingUp className="h-5 w-5 text-steel-400" /> Versiones publicadas
           </p>
         </div>
-        <div className="max-h-[360px] overflow-y-auto">
+        <div className="overflow-x-auto">
           <table className="table-base">
             <thead>
               <tr>
-                <th>Fecha</th>
-                <th className="text-right">Dólar</th>
-                <th className="text-right">Bs</th>
-                <th className="text-right">$1 en Bs</th>
-                <th>Quién</th>
+                <th><Th t={th_} col="fecha" /></th>
+                <th className="text-right"><Th t={th_} col="dolar" /></th>
+                <th className="text-right"><Th t={th_} col="bs" /></th>
+                <th className="text-right"><Th t={th_} col="bsPorDolar" /></th>
+                <th><Th t={th_} col="quien" /></th>
               </tr>
             </thead>
             <tbody>
-              {data.historial.map((h) => (
+              {th_.visibles.map((h) => (
                 <tr key={h.id}>
                   <td className="text-steel-400">{fechaHora(h.creadoEn)}</td>
                   <td className="tnum text-right text-steel-100">
@@ -228,6 +240,7 @@ export default function TasasPage() {
             </tbody>
           </table>
         </div>
+        <Paginacion t={th_} />
       </div>
     </div>
   );

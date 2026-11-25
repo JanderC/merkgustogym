@@ -5,6 +5,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
+  Award,
   CalendarDays,
   CalendarPlus,
   ChevronRight,
@@ -35,6 +36,7 @@ import { apiCoach, sesionCoach } from '../../lib/api';
 import { fecha, fechaCorta, hace, hora, hoyISO } from '../../lib/format';
 import type { ClaseCoach, ClienteCoach, FichaCoach, Plantilla, RutinaCoach } from './tipos';
 import { diaCorto, whatsappDe } from './tipos';
+import { EstadoPz } from '../cajero/Personalizados';
 
 const FILTROS = [
   { v: 'todos', l: 'Todos' },
@@ -42,6 +44,7 @@ const FILTROS = [
   { v: 'vence', l: 'Vencen' },
   { v: 'ausente', l: 'No vienen' },
   { v: 'sin_rutina', l: 'Sin rutina' },
+  { v: 'personalizado', l: 'Personalizado' },
 ] as const;
 
 export function ClientesCoach() {
@@ -55,6 +58,7 @@ export function ClientesCoach() {
   const lista = (data ?? []).filter((c) => {
     if (texto && !`${c.nombre} ${c.apellido} ${c.codigo}`.toLowerCase().includes(texto)) return false;
     if (filtro === 'alertas') return c.alertas.some((a) => a.tipo !== 'medir');
+    if (filtro === 'personalizado') return !!c.personalizado;
     if (filtro !== 'todos') return c.alertas.some((a) => a.tipo === filtro);
     return true;
   });
@@ -112,13 +116,14 @@ export function ClientesCoach() {
                   {c.rutina && ` · ${c.rutina}`}
                 </p>
                 <div className="mt-1 flex flex-wrap gap-1">
+                  {c.personalizado && <EstadoPz estado={c.personalizado.estado} texto={`Personalizado: ${c.personalizado.texto}`} />}
                   {c.entrenosSemana > 0 && (
                     <span className="chip border-ok/30 bg-ok/10 text-ok">
                       <Flame className="h-3 w-3" /> {c.entrenosSemana} esta semana
                     </span>
                   )}
                   {c.alertas
-                    .filter((a) => a.tipo !== 'medir')
+                    .filter((a) => a.tipo !== 'medir' && a.tipo !== 'personalizado')
                     .slice(0, 2)
                     .map((a) => (
                       <ChipAlerta key={a.tipo} {...a} />
@@ -304,6 +309,19 @@ export function ClienteDetalle() {
         )}
         <p className="mt-2 text-[11px] text-steel-600">Con su enlace entra a su app sin clave (sirve si la olvidó). Generar uno nuevo desactiva el anterior.</p>
       </section>
+
+      {f.personalizado && (
+        <Link to="/coach/personalizados" className="mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-white/[0.07] bg-white/[0.02] p-4">
+          <Award className="h-5 w-5 text-flame-400" />
+          <span className="font-bold text-steel-100">Personalizado contigo</span>
+          <EstadoPz estado={f.personalizado.estado} />
+          <span className="text-sm text-steel-400">
+            {f.personalizado.texto}
+            {f.personalizado.hasta && ` · pagado hasta ${fecha(f.personalizado.hasta)}`}
+            {f.personalizado.ultimoPago && ` · último pago ${fecha(f.personalizado.ultimoPago.fecha)} (${f.personalizado.ultimoPago.duracion})`}
+          </span>
+        </Link>
+      )}
 
       {/* Cifras */}
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">

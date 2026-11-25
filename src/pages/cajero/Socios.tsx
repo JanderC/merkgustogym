@@ -2,6 +2,7 @@ import { Search, UserPlus, Users } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ClienteNuevo } from '../../components/ClienteNuevo';
+import { Paginacion, Th, useTabla } from '../../components/Tabla';
 import { SocioDrawer, useBuscarSocios } from '../../components/socios';
 import { Avatar, BioBadge, Empty, Loading, PageHeader, Tabs, VigenciaBadge } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
@@ -16,7 +17,19 @@ export default function SociosPage() {
   const [filtro, setFiltro] = useState<Filtro>('todos');
   const [abierto, setAbierto] = useState<string | null>(null);
   const [nuevo, setNuevo] = useState(false);
-  const { data, isLoading } = useBuscarSocios(texto, filtro, 200);
+  const { data, isLoading } = useBuscarSocios(texto, filtro, 5000);
+  const t = useTabla(
+    data,
+    {
+      nombre: { label: 'Cliente', valor: (s) => `${s.nombre} ${s.apellido}` },
+      codigo: { label: 'Código', valor: (s) => s.codigo },
+      plan: { label: 'Plan', valor: (s) => s.plan },
+      vence: { label: 'Vence', valor: (s) => s.vence },
+      lector: { label: 'Lector', valor: (s) => s.bioEstado },
+      visita: { label: 'Última visita', valor: (s) => s.ultimaVisita },
+    },
+    { id: 'clientes', orden: { col: 'nombre', dir: 'asc' } },
+  );
 
   const filtros: Array<{ value: Filtro; label: string }> = [
     { value: 'todos', label: 'Todos' },
@@ -58,15 +71,25 @@ export default function SociosPage() {
             <table className="table-base">
               <thead>
                 <tr>
-                  <th>Cliente</th>
-                  <th>Plan</th>
-                  <th>Estado</th>
-                  <th className="hidden md:table-cell">Lector</th>
-                  <th className="hidden lg:table-cell">Última visita</th>
+                  <th>
+                    <Th t={t} col="nombre" />
+                  </th>
+                  <th>
+                    <Th t={t} col="plan" />
+                  </th>
+                  <th>
+                    <Th t={t} col="vence">Estado</Th>
+                  </th>
+                  <th className="hidden md:table-cell">
+                    <Th t={t} col="lector" />
+                  </th>
+                  <th className="hidden lg:table-cell">
+                    <Th t={t} col="visita" />
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {data.map((s) => (
+                {t.visibles.map((s) => (
                   <tr key={s.id} className="cursor-pointer" onClick={() => setAbierto(s.id)}>
                     <td>
                       <div className="flex items-center gap-3">
@@ -96,6 +119,7 @@ export default function SociosPage() {
                 ))}
               </tbody>
             </table>
+            <Paginacion t={t} />
           </div>
         )}
       </div>

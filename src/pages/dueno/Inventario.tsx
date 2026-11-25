@@ -7,6 +7,7 @@ import { AlertTriangle, Ban, Boxes, ClipboardCheck, FileImage, HandCoins, Histor
 import { useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
+import { Paginacion, Th, useTabla } from '../../components/Tabla';
 import { Drawer, Empty, Field, Loading, Modal, NumInput, PageHeader, Stat, Tabs, cx } from '../../components/ui';
 import { api, API, session } from '../../lib/api';
 import { fecha, fechaHora, hace, hoyISO, money, sumarDias } from '../../lib/format';
@@ -127,6 +128,17 @@ function Compras({ inicial, limpiar }: { inicial: { codigo?: string } | null; li
     queryFn: () => api<Compra[]>('/inventario/compras', { query: pendientes ? { pendientes: 1 } : { desde, hasta } }),
   });
   const vigentes = (data ?? []).filter((c) => c.estado !== 'anulada');
+  const t = useTabla(
+    data,
+    {
+      fecha: { label: 'Fecha', valor: (c) => `${c.fecha} ${String(c.id).padStart(8, '0')}` },
+      proveedor: { label: 'Proveedor', valor: (c) => c.proveedor },
+      factura: { label: 'Factura', valor: (c) => c.factura },
+      estado: { label: 'Estado', valor: (c) => c.estado },
+      total: { label: 'Total', valor: (c) => c.totalRef },
+    },
+    { id: 'compras', orden: { col: 'fecha', dir: 'desc' } },
+  );
   return (
     <>
       <div className="mb-4 flex flex-wrap items-end gap-3">
@@ -157,15 +169,15 @@ function Compras({ inicial, limpiar }: { inicial: { codigo?: string } | null; li
             <table className="table-base">
               <thead>
                 <tr>
-                  <th>Compra</th>
-                  <th>Proveedor</th>
+                  <th><Th t={t} col="fecha">Compra</Th></th>
+                  <th><Th t={t} col="proveedor" /></th>
                   <th>Productos</th>
-                  <th>Estado</th>
-                  <th className="text-right">Total</th>
+                  <th><Th t={t} col="estado" /></th>
+                  <th className="text-right"><Th t={t} col="total" /></th>
                 </tr>
               </thead>
               <tbody>
-                {data.map((c) => (
+                {t.visibles.map((c) => (
                   <tr key={c.id} className={cx('cursor-pointer', c.estado === 'anulada' && 'opacity-50')} onClick={() => setVer(c)}>
                     <td>
                       <p className="font-bold text-steel-100">#{c.id}</p>
@@ -193,6 +205,7 @@ function Compras({ inicial, limpiar }: { inicial: { codigo?: string } | null; li
                 ))}
               </tbody>
             </table>
+            <Paginacion t={t} />
             <p className="border-t border-white/[0.06] px-5 py-3 text-right text-sm text-steel-400">
               Total comprado: <b className="tnum text-white">{money(vigentes.reduce((s, c) => s + c.totalRef, 0))}</b>
             </p>
@@ -845,6 +858,16 @@ function Conteo() {
 
 function HistorialConteos({ historial, onVer }: { historial?: ConteoHist[]; onVer: (c: ConteoHist) => void }) {
   const lista = (historial ?? []).filter((c) => c.estado !== 'abierto');
+  const t = useTabla(
+    lista,
+    {
+      fecha: { label: 'Fecha', valor: (c) => c.cerradoEn ?? c.creadoEn },
+      quien: { label: 'Quién', valor: (c) => c.abrio },
+      productos: { label: 'Productos', valor: (c) => c.productos },
+      faltante: { label: 'Faltante', valor: (c) => c.faltanteRef },
+    },
+    { id: 'conteos', orden: { col: 'fecha', dir: 'desc' } },
+  );
   return (
     <div className="card overflow-hidden">
       {!lista.length ? (
@@ -853,14 +876,14 @@ function HistorialConteos({ historial, onVer }: { historial?: ConteoHist[]; onVe
         <table className="table-base">
           <thead>
             <tr>
-              <th>Conteo</th>
-              <th>Quién</th>
-              <th>Productos</th>
-              <th className="text-right">Resultado</th>
+              <th><Th t={t} col="fecha">Conteo</Th></th>
+              <th><Th t={t} col="quien" /></th>
+              <th><Th t={t} col="productos" /></th>
+              <th className="text-right"><Th t={t} col="faltante">Resultado</Th></th>
             </tr>
           </thead>
           <tbody>
-            {lista.map((c) => (
+            {t.visibles.map((c) => (
               <tr key={c.id} className={cx(c.estado === 'cerrado' ? 'cursor-pointer' : 'opacity-50')} onClick={() => c.estado === 'cerrado' && onVer(c)}>
                 <td>
                   <p className="font-bold text-steel-100">#{c.id}</p>
@@ -892,6 +915,7 @@ function HistorialConteos({ historial, onVer }: { historial?: ConteoHist[]; onVe
           </tbody>
         </table>
       )}
+      <Paginacion t={t} />
     </div>
   );
 }
@@ -931,6 +955,15 @@ function Contando({ conteo, onCambio, onCerrado, verHist, cerrarHist }: { conteo
   const q = buscar.trim().toLowerCase();
   const lista = conteo.productos.filter((p) => !q || p.nombre.toLowerCase().includes(q) || p.categoria.toLowerCase().includes(q) || p.codigoBarras === buscar.trim());
   const pendientes = conteo.productos.length - conteo.contados;
+  const t = useTabla(
+    lista,
+    {
+      nombre: { label: 'Producto', valor: (p) => p.nombre },
+      categoria: { label: 'Categoría', valor: (p) => p.categoria },
+      contado: { label: 'Contado', valor: (p) => p.contado },
+    },
+    { id: 'contando', orden: { col: 'nombre', dir: 'asc' }, porPagina: 50 },
+  );
 
   return (
     <>
@@ -990,12 +1023,14 @@ function Contando({ conteo, onCambio, onCerrado, verHist, cerrarHist }: { conteo
         <table className="table-base">
           <thead>
             <tr>
-              <th>Producto</th>
-              <th className="w-40">Contado</th>
+              <th><Th t={t} col="nombre" /></th>
+              <th className="w-40">
+                <Th t={t} col="contado" />
+              </th>
             </tr>
           </thead>
           <tbody>
-            {lista.map((p) => (
+            {t.visibles.map((p) => (
               <tr key={p.id}>
                 <td>
                   <p className="font-bold text-steel-100">{p.nombre}</p>
@@ -1023,6 +1058,7 @@ function Contando({ conteo, onCambio, onCerrado, verHist, cerrarHist }: { conteo
             ))}
           </tbody>
         </table>
+        <Paginacion t={t} />
       </div>
 
       {confirmar && (
@@ -1057,6 +1093,16 @@ function DetalleConteo({ conteo, onClose }: { conteo: ConteoHist; onClose: () =>
     queryKey: ['conteo', conteo.id],
     queryFn: () => api<Array<{ productoId: number; nombre: string; categoria: string; esperado: number; contado: number; diferencia: number; valorTexto: string | null; conto: string | null }>>(`/inventario/conteos/${conteo.id}`),
   });
+  const t = useTabla(
+    data,
+    {
+      nombre: { label: 'Producto', valor: (i) => i.nombre },
+      esperado: { label: 'Sistema', valor: (i) => i.esperado },
+      contado: { label: 'Contado', valor: (i) => i.contado },
+      diferencia: { label: 'Diferencia', valor: (i) => i.diferencia },
+    },
+    { id: 'conteo-detalle', orden: { col: 'diferencia', dir: 'asc' } },
+  );
   return (
     <Modal title={`Conteo #${conteo.id}`} size="lg" onClose={onClose}>
       <div className="mb-4 flex flex-wrap gap-3">
@@ -1070,14 +1116,14 @@ function DetalleConteo({ conteo, onClose }: { conteo: ConteoHist; onClose: () =>
         <table className="table-base">
           <thead>
             <tr>
-              <th>Producto</th>
-              <th className="text-right">Sistema</th>
-              <th className="text-right">Contado</th>
-              <th className="text-right">Diferencia</th>
+              <th><Th t={t} col="nombre" /></th>
+              <th className="text-right"><Th t={t} col="esperado" /></th>
+              <th className="text-right"><Th t={t} col="contado" /></th>
+              <th className="text-right"><Th t={t} col="diferencia" /></th>
             </tr>
           </thead>
           <tbody>
-            {data.map((i) => (
+            {t.visibles.map((i) => (
               <tr key={i.productoId}>
                 <td>
                   <p className="font-bold text-steel-100">{i.nombre}</p>
@@ -1094,6 +1140,7 @@ function DetalleConteo({ conteo, onClose }: { conteo: ConteoHist; onClose: () =>
           </tbody>
         </table>
       )}
+      <Paginacion t={t} />
     </Modal>
   );
 }
@@ -1113,6 +1160,17 @@ function Movimientos() {
         query: { productoId: productoId || undefined, tipo: tipo || undefined, desde, hasta },
       }),
   });
+  const t = useTabla(
+    data,
+    {
+      fecha: { label: 'Fecha', valor: (k) => `${k.creadoEn} ${String(k.id).padStart(10, '0')}` },
+      producto: { label: 'Producto', valor: (k) => k.producto },
+      tipo: { label: 'Movimiento', valor: (k) => TIPOS_KARDEX[k.tipo]?.label ?? k.tipo },
+      cantidad: { label: 'Unidades', valor: (k) => k.cantidad },
+      quedo: { label: 'Quedó', valor: (k) => k.stockResultante },
+    },
+    { id: 'kardex', orden: { col: 'fecha', dir: 'desc' } },
+  );
   return (
     <>
       <div className="mb-4 flex flex-wrap items-end gap-3">
@@ -1155,15 +1213,15 @@ function Movimientos() {
             <table className="table-base">
               <thead>
                 <tr>
-                  <th>Fecha</th>
-                  <th>Producto</th>
-                  <th>Movimiento</th>
-                  <th className="text-right">Unidades</th>
-                  <th className="text-right">Quedó</th>
+                  <th><Th t={t} col="fecha" /></th>
+                  <th><Th t={t} col="producto" /></th>
+                  <th><Th t={t} col="tipo" /></th>
+                  <th className="text-right"><Th t={t} col="cantidad" /></th>
+                  <th className="text-right"><Th t={t} col="quedo" /></th>
                 </tr>
               </thead>
               <tbody>
-                {data.map((k) => (
+                {t.visibles.map((k) => (
                   <tr key={k.id}>
                     <td className="whitespace-nowrap text-steel-400">{fechaHora(k.creadoEn)}</td>
                     <td className="font-bold text-steel-100">{k.producto}</td>
@@ -1180,6 +1238,7 @@ function Movimientos() {
                 ))}
               </tbody>
             </table>
+            <Paginacion t={t} />
           </div>
         )}
       </div>
@@ -1192,6 +1251,16 @@ function Movimientos() {
 function Proveedores() {
   const { data, isLoading } = useProveedores();
   const [editar, setEditar] = useState<Proveedor | 'nuevo' | null>(null);
+  const t = useTabla(
+    data,
+    {
+      nombre: { label: 'Proveedor', valor: (p) => p.nombre },
+      contacto: { label: 'Contacto', valor: (p) => p.contacto ?? p.telefono },
+      compras: { label: 'Compras', valor: (p) => p.compras },
+      ultima: { label: 'Última compra', valor: (p) => p.ultimaCompra },
+    },
+    { id: 'proveedores', orden: { col: 'nombre', dir: 'asc' } },
+  );
   return (
     <>
       <div className="mb-4 flex justify-end">
@@ -1208,14 +1277,14 @@ function Proveedores() {
           <table className="table-base">
             <thead>
               <tr>
-                <th>Proveedor</th>
-                <th>Contacto</th>
-                <th>Compras</th>
+                <th><Th t={t} col="nombre" /></th>
+                <th><Th t={t} col="contacto" /></th>
+                <th><Th t={t} col="compras" /></th>
                 <th />
               </tr>
             </thead>
             <tbody>
-              {data.map((p) => (
+              {t.visibles.map((p) => (
                 <tr key={p.id} className={cx(!p.activo && 'opacity-50')}>
                   <td>
                     <p className="font-bold text-steel-100">{p.nombre}</p>
@@ -1236,6 +1305,7 @@ function Proveedores() {
             </tbody>
           </table>
         )}
+        <Paginacion t={t} />
       </div>
       {editar && <ProveedorModal proveedor={editar === 'nuevo' ? undefined : editar} onClose={() => setEditar(null)} onDone={() => setEditar(null)} />}
     </>

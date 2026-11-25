@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { BotonExcel } from '../../components/BotonExcel';
 import { cx, Diferencia, Drawer, Empty, Field, Loading, Modal, PageHeader, Tabs } from '../../components/ui';
+import { Paginacion, Th, useTabla } from '../../components/Tabla';
 import { API, api, session } from '../../lib/api';
 import { duracion, fechaHora, hoyISO, hora, money, moneySigned, sumarDias } from '../../lib/format';
 import { fmt, INFO, type Moneda } from '../../lib/monedas';
@@ -262,6 +263,20 @@ export default function Cierres() {
   const cerrados = (data ?? []).filter((t) => t.estado !== 'abierto');
   const totalVendido = (data ?? []).reduce((s, t) => s + t.totalVendidoRef, 0);
   const balance = cerrados.reduce((s, t) => s + t.diferencia, 0);
+  const tb = useTabla(
+    data,
+    {
+      numero: { label: 'Turno', valor: (t) => t.numero },
+      cajero: { label: 'Cajera', valor: (t) => t.cajero },
+      horario: { label: 'Horario', valor: (t) => t.abiertoEn },
+      vendido: { label: 'Vendido', valor: (t) => t.totalVendidoRef },
+      gastos: { label: 'Gastos', valor: (t) => t.egresosRef },
+      entrego: { label: 'Entregó', valor: (t) => (t.estado === 'abierto' ? null : t.totalDeclaradoRef) },
+      resultado: { label: 'Resultado', valor: (t) => (t.estado === 'abierto' ? null : t.diferencia) },
+      estado: { label: 'Estado', valor: (t) => t.estado },
+    },
+    { id: 'cierres', orden: { col: 'numero', dir: 'desc' } },
+  );
 
   return (
     <div>
@@ -310,17 +325,17 @@ export default function Cierres() {
             <table className="table-base">
               <thead>
                 <tr>
-                  <th>Turno</th>
-                  <th>Horario</th>
-                  <th className="text-right">Vendido</th>
-                  <th className="text-right">Gastos</th>
-                  <th className="text-right">Entregó</th>
-                  <th>Resultado</th>
-                  <th>Estado</th>
+                  <th><Th t={tb} col="numero" /></th>
+                  <th><Th t={tb} col="horario" /></th>
+                  <th className="text-right"><Th t={tb} col="vendido" /></th>
+                  <th className="text-right"><Th t={tb} col="gastos" /></th>
+                  <th className="text-right"><Th t={tb} col="entrego" /></th>
+                  <th><Th t={tb} col="resultado" /></th>
+                  <th><Th t={tb} col="estado" /></th>
                 </tr>
               </thead>
               <tbody>
-                {data.map((t) => (
+                {tb.visibles.map((t) => (
                   <tr key={t.id} className="cursor-pointer" onClick={() => setAbierto(t.id)}>
                     <td>
                       <p className="font-bold text-steel-100">
@@ -348,6 +363,7 @@ export default function Cierres() {
                 ))}
               </tbody>
             </table>
+            <Paginacion t={tb} />
           </div>
         )}
       </div>

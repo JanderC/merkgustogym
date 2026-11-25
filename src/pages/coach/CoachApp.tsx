@@ -2,7 +2,7 @@
  * App de entrenadores (web y móvil): sus clases, sus clientes, sus rutinas y su perfil.
  */
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { AlertTriangle, CalendarDays, ChevronRight, ClipboardCopy, Dumbbell, Home, KeyRound, LayoutTemplate, LogOut, UserRound, Users } from 'lucide-react';
+import { AlertTriangle, Award, CalendarDays, ChevronRight, ClipboardCopy, Dumbbell, Home, KeyRound, LayoutTemplate, LogOut, UserRound, Users } from 'lucide-react';
 import { useState } from 'react';
 import { Link, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -11,6 +11,7 @@ import { Avatar, cx, Field, Loading } from '../../components/ui';
 import { apiCoach, sesionCoach } from '../../lib/api';
 import { ClasesCoach, ClaseDrawer, Plantillas } from './CoachClases';
 import { ClienteDetalle, ClientesCoach } from './CoachClientes';
+import { PersonalizadosCoach } from './CoachPersonalizados';
 import { diaCorto, type Alerta, type ClaseCoach } from './tipos';
 
 const NAV: ItemNav[] = [
@@ -48,6 +49,7 @@ export default function CoachApp() {
         <Route index element={<Inicio />} />
         <Route path="clientes" element={<ClientesCoach />} />
         <Route path="clientes/:id" element={<ClienteDetalle />} />
+        <Route path="personalizados" element={<PersonalizadosCoach />} />
         <Route path="clases" element={<ClasesCoach />} />
         <Route path="rutinas" element={<Plantillas />} />
         <Route path="perfil" element={<Perfil />} />
@@ -61,6 +63,7 @@ interface InicioCoach {
   hoy: ClaseCoach[];
   semana: ClaseCoach[];
   clientes: { total: number; alDia: number; vencen: number; ausentes: number; sinRutina: number; entrenaronSemana: number };
+  personalizados?: { alDia: number; vencen: number; vencidos: number; deben: number; sinPago: number };
   alertas: Array<{ id: string; nombre: string; tieneFoto: boolean; alertas: Alerta[] }>;
 }
 
@@ -82,6 +85,21 @@ function Inicio() {
         <Cifra valor={c.entrenaronSemana} etiqueta="entrenaron esta semana" color="text-flame-400" />
         <Cifra valor={c.vencen + c.ausentes} etiqueta="necesitan atención" color={c.vencen + c.ausentes ? 'text-warn' : 'text-steel-300'} to="/coach/clientes?filtro=alertas" />
       </div>
+
+      {data.personalizados && data.personalizados.alDia + data.personalizados.vencen + data.personalizados.vencidos + data.personalizados.deben > 0 && (
+        <Link to="/coach/personalizados" className="mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-flame-500/25 bg-flame-500/[0.05] p-4 transition hover:bg-flame-500/[0.09]">
+          <Award className="h-6 w-6 text-flame-400" />
+          <span className="min-w-0 flex-1">
+            <span className="block font-display font-extrabold text-white">Tus personalizados</span>
+            <span className="text-sm text-steel-300">
+              <b className="text-ok">{data.personalizados.alDia} pagaron</b>
+              {data.personalizados.vencen > 0 && <> · <b className="text-warn">{data.personalizados.vencen} vencen pronto</b></>}
+              {data.personalizados.vencidos + data.personalizados.deben > 0 && <> · <b className="text-bad">{data.personalizados.vencidos + data.personalizados.deben} por cobrar</b></>}
+            </span>
+          </span>
+          <span className="text-xs font-bold text-flame-400">Ver quién pagó y lo que te toca →</span>
+        </Link>
+      )}
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[1.2fr_1fr]">
         <Seccion titulo="Tus clases de hoy" icono={<CalendarDays className="h-5 w-5 text-flame-500" />} accion={<Link to="/coach/clases" className="text-xs font-bold text-flame-400">Semana →</Link>}>

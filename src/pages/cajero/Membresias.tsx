@@ -10,6 +10,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { telefonoOk } from '../../components/ClienteNuevo';
 import { SocioDrawer, useBuscarSocios } from '../../components/socios';
+import { Paginacion, Th, useTabla } from '../../components/Tabla';
 import { Avatar, cx, Empty, Loading, Modal, PageHeader } from '../../components/ui';
 import { api } from '../../lib/api';
 import { fecha, hace } from '../../lib/format';
@@ -273,6 +274,18 @@ export default function Membresias() {
     () => (data?.filas ?? []).filter((f) => (q ? coincide(f) : pasaFiltro(f, filtro)) && (planId === null || f.planId === planId)),
     [data, q, filtro, planId], // eslint-disable-line react-hooks/exhaustive-deps
   );
+  const t = useTabla(
+    lista,
+    {
+      nombre: { label: 'Cliente', valor: (f) => nombreDe(f) },
+      plan: { label: 'Plan', valor: (f) => f.plan },
+      dias: { label: 'Días', valor: (f) => f.diasRestantes },
+      vence: { label: 'Vence', valor: (f) => f.hasta },
+      pago: { label: 'Próximo pago', valor: (f) => f.proximoPago },
+      visita: { label: 'Última visita', valor: (f) => f.ultimaVisita },
+    },
+    { id: 'membresias', orden: { col: 'dias', dir: 'asc' } },
+  );
   // Si la búsqueda no está en membresías (cliente sin plan), lo buscamos en clientes
   const sinPlan = useBuscarSocios(q.length >= 3 && !encontrados.length ? texto : '', 'todos', 5);
   const unico = encontrados.length === 1 ? encontrados[0]! : null;
@@ -423,16 +436,26 @@ export default function Membresias() {
               <table className="table-base">
                 <thead>
                   <tr>
-                    <th>Cliente</th>
-                    <th>Plan</th>
-                    <th>Días</th>
-                    <th className="hidden md:table-cell">Vence · próximo pago</th>
+                    <th>
+                      <Th t={t} col="nombre" />
+                    </th>
+                    <th>
+                      <Th t={t} col="plan" />
+                    </th>
+                    <th>
+                      <Th t={t} col="dias" />
+                    </th>
+                    <th className="hidden md:table-cell">
+                      <Th t={t} col="vence">Vence · próximo pago</Th>
+                    </th>
                     <th className="hidden lg:table-cell">Acceso</th>
-                    <th className="hidden xl:table-cell">Última visita</th>
+                    <th className="hidden xl:table-cell">
+                      <Th t={t} col="visita" />
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {lista.map((f) => (
+                  {t.visibles.map((f) => (
                     <tr key={f.socioId} className="cursor-pointer" onClick={() => setSel(f.socioId)}>
                       <td>
                         <div className="flex items-center gap-3">
@@ -466,6 +489,7 @@ export default function Membresias() {
                   ))}
                 </tbody>
               </table>
+              <Paginacion t={t} />
             </div>
           )}
         </div>

@@ -36,6 +36,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { SocioForm, SocioPicker } from '../../components/socios';
+import { Paginacion, Th, useTabla } from '../../components/Tabla';
 import { Avatar, cx, Drawer, Empty, Field, Loading, Modal, NumInput, PageHeader, Tabs } from '../../components/ui';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
@@ -778,6 +779,17 @@ export default function Clases() {
   const [editor, setEditor] = useState<{ clase?: Clase | ClaseDetalle; fecha?: string } | null>(null);
   const hasta = sumarDias(semana, 6);
   const { data, isLoading } = useQuery({ queryKey: ['clases', semana], queryFn: () => api<Clase[]>('/clases', { query: { desde: semana, hasta } }), refetchInterval: 30_000 });
+  const t = useTabla(
+    data,
+    {
+      dia: { label: 'Día y hora', valor: (c) => `${c.dia} ${c.hora}` },
+      nombre: { label: 'Clase', valor: (c) => c.nombre },
+      entrenador: { label: 'Entrenador', valor: (c) => c.entrenador },
+      plan: { label: 'Plan', valor: (c) => c.plan },
+      inscritos: { label: 'Inscritos', valor: (c) => c.inscritos },
+    },
+    { id: 'clases', orden: { col: 'dia', dir: 'asc' } },
+  );
   const dias = useMemo(() => Array.from({ length: 7 }, (_, i) => sumarDias(semana, i)), [semana]);
   const hoy = hoyISO();
   const activas = (data ?? []).filter((c) => c.estado !== 'cancelada');
@@ -868,16 +880,26 @@ export default function Clases() {
           <table className="table-base">
             <thead>
               <tr>
-                <th>Día y hora</th>
-                <th>Clase</th>
-                <th>Entrenador</th>
-                <th>Plan</th>
+                <th>
+                  <Th t={t} col="dia" />
+                </th>
+                <th>
+                  <Th t={t} col="nombre" />
+                </th>
+                <th>
+                  <Th t={t} col="entrenador" />
+                </th>
+                <th>
+                  <Th t={t} col="plan" />
+                </th>
                 <th>Trabaja</th>
-                <th className="text-right">Inscritos</th>
+                <th className="text-right">
+                  <Th t={t} col="inscritos" />
+                </th>
               </tr>
             </thead>
             <tbody>
-              {data.map((c) => (
+              {t.visibles.map((c) => (
                 <tr key={c.id} className={cx('cursor-pointer', c.estado === 'cancelada' && 'opacity-50')} onClick={() => setAbierta(c.id)}>
                   <td className="whitespace-nowrap capitalize text-steel-300">
                     {diaLargo(c.dia)} · {hora12(c.hora)}
@@ -903,6 +925,7 @@ export default function Clases() {
               ))}
             </tbody>
           </table>
+          <Paginacion t={t} />
         </div>
       )}
 
