@@ -1,25 +1,29 @@
 /**
  * Alta guiada de cliente en un solo flujo:
- *   1. Datos  →  2. Rostro (para el lector)  →  3. Plan  →  4. Cobro  →  ✓ Listo
+ *   1. Datos  →  2. Plan y/o personalizado  →  3. Rostro (para el lector)  →  4. Cobro  →  ✓ Listo
  * El cliente se crea al confirmar el rostro; la membresía nace al registrar el
  * pago (queda en el turno de la cajera). La pantalla final muestra en vivo
  * cuándo el lector ya tiene su rostro y su vigencia.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, ArrowRight, Camera, CheckCircle2, Loader2, Power, ScanFace, TriangleAlert, UserPlus } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Award, Camera, CheckCircle2, Loader2, Power, ScanFace, TriangleAlert, UserPlus } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { fecha, fechaDia, finPlan, hoyISO, sumarDias } from '../lib/format';
-import type { Moneda } from '../lib/monedas';
+import { fmt, type Moneda } from '../lib/monedas';
 import { useCatalogo, useTurno } from '../lib/hooks';
-import type { Plan, SocioDetalle } from '../lib/types';
+import type { EntrenadorPersonalizado, Plan, SocioDetalle } from '../lib/types';
+import { EntrenadorAvatar } from './entrenadores';
 import { FotoCaptura } from './FotoCaptura';
 import { PanelPago, Precio, type PagoPayload } from './PanelPago';
 import { SocioPicker } from './socios';
 import { Avatar, cx, Field, Modal } from './ui';
 
 const PASOS = ['Datos', 'Plan', 'Rostro', 'Cobro'] as const;
+
+type Pz = { ent: EntrenadorPersonalizado; periodo: 'meses' | 'semanas'; cantidad: number };
+const precioPz = (p: Pz) => (p.periodo === 'meses' ? p.ent.mensual : (p.ent.semanal ?? p.ent.mensual)) * p.cantidad;
 
 interface Datos {
   nombre: string;
@@ -140,6 +144,8 @@ export function ClienteNuevo({ onClose, nombreInicial = '' }: { onClose: () => v
   // Si se inscribió días antes, la mensualidad cuenta desde ese día
   const [inicio, setInicio] = useState(hoyISO());
   const [acomp, setAcomp] = useState<Array<{ id: string; nombre: string }>>([]);
+  // Entrenamiento personalizado (con o sin plan)
+  const [pz, setPz] = useState<Pz | null>(null);
   const [venta, setVenta] = useState<VentaHecha | null>(null);
   const set = <K extends keyof Datos>(k: K, v: Datos[K]) => setD((p) => ({ ...p, [k]: v }));
 
@@ -167,16 +173,28 @@ export function ClienteNuevo({ onClose, nombreInicial = '' }: { onClose: () => v
   });
 
   const cobrar = useMutation({
-    mutationFn: (p: PagoPayload) => api<VentaHecha>('/pos/ventas', { body: { socioId: cliente!.id, items: [{ tipo: 'membresia', id: plan!.id, acompanantes: acomp.map((a) => a.id), ...(inicio !== hoyISO() && { inicio }) }], ...p } }),
+    mutationFn: (p: PagoPayload) =>
+      api<VentaHecha>('/pos/ventas', {
+        body: {
+          socioId: cliente!.id,
+          items: [
+            ...(plan ? [{ tipo: 'membresia', id: plan.id, acompanantes: acomp.map((a) => a.id), ...(inicio !== hoyISO() && { inicio }) }] : []),
+            ...(pz ? [{ tipo: 'personalizado', entrenadorId: pz.ent.id, periodo: pz.periodo, cantidad: pz.cantidad }] : []),
+          ],
+          ...p,
+        },
+      }),
     onSuccess: (v) => {
       setVenta(v);
-      ['turno', 'socios', 'socio', 'catalogo'].forEach((k) => void qc.invalidateQueries({ queryKey: [k] }));
+      ['turno', 'socios', 'socio', 'catalogo', 'personalizados'].forEach((k) => void qc.invalidateQueries({ queryKey: [k] }));
     },
     onError: (e: Error) => toast.error(e.message),
   });
 
   const nombreCompleto = `${d.nombre} ${d.apellido}`.trim();
-  const terminado = venta || (paso === 3 && !plan);
+  const hayCobro = !!plan || !!pz;
+  const terminado = venta || (paso === 3 && !hayCobro);
+  const lineasCobro = [...(plan ? [{ monto: plan.precio, moneda: plan.moneda }] : []), ...(pz ? [{ monto: precioPz(pz), moneda: pz.ent.moneda }] : [])];
 
   return (
     <Modal title={terminado ? 'Cliente listo' : cliente ? `Nuevo cliente · #${cliente.codigo}` : 'Nuevo cliente'} onClose={onClose} size="lg">
@@ -239,7 +257,7 @@ export function ClienteNuevo({ onClose, nombreInicial = '' }: { onClose: () => v
               <ArrowLeft className="h-4 w-4" /> Plan
             </button>
             <button className="btn-primary" disabled={(!foto && !sinFoto) || guardar.isPending} onClick={() => guardar.mutate()}>
-              {guardar.isPending ? 'Guardando…' : plan ? 'Registrar e ir a cobrar' : 'Registrar cliente'} <ArrowRight className="h-4 w-4" />
+              {guardar.isPending ? 'Guardando…' : hayCobro ? 'Registrar e ir a cobrar' : 'Registrar cliente'} <ArrowRight className="h-4 w-4" />
             </button>
           </div>
         </div>
@@ -297,51 +315,135 @@ export function ClienteNuevo({ onClose, nombreInicial = '' }: { onClose: () => v
               </div>
             </div>
           )}
+          {cat && (
+            <div className="mt-6 rounded-2xl border border-flame-500/20 bg-flame-500/[0.03] p-4">
+              <p className="flex items-center gap-2 font-display text-lg font-extrabold text-white">
+                <Award className="h-5 w-5 text-flame-400" /> ¿Quiere entrenamiento personalizado?
+              </p>
+              <p className="mb-3 text-xs text-steel-400">Opcional. Se cobra junto con el plan (o solo) y queda como cliente del entrenador: lo ve en su app.</p>
+              {!cat.entrenadores?.length && (
+                <p className="rounded-xl border border-warn/30 bg-warn/[0.06] p-3 text-sm text-warn">
+                  Todavía ningún entrenador tiene precio de personalizado. El dueño lo pone en Panel › Entrenadores › editar (lápiz) › “Da entrenamiento personalizado”.
+                </p>
+              )}
+              <div className="grid gap-2 sm:grid-cols-2">
+                {(cat.entrenadores ?? []).map((e) => {
+                  const sel = pz?.ent.id === e.id;
+                  return (
+                    <button
+                      key={e.id}
+                      type="button"
+                      onClick={() => setPz(sel ? null : { ent: e, periodo: 'meses', cantidad: 1 })}
+                      className={cx('flex items-center gap-3 rounded-xl border p-3 text-left transition', sel ? 'border-flame-500/70 bg-flame-500/10 ring-2 ring-flame-500/30' : 'border-white/[0.08] hover:border-white/20')}
+                    >
+                      <EntrenadorAvatar e={e} size={40} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-bold text-steel-100">{e.nombre}</span>
+                        <span className="block text-xs text-steel-500">
+                          {fmt(e.mensual, e.moneda)} al mes{e.semanal ? ` · ${fmt(e.semanal, e.moneda)} semana` : ''}
+                        </span>
+                      </span>
+                      {sel && <CheckCircle2 className="h-5 w-5 shrink-0 text-flame-500" />}
+                    </button>
+                  );
+                })}
+              </div>
+              {pz && (
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  <div className="inline-flex rounded-lg bg-ink-950/60 p-0.5 text-xs font-bold">
+                    {(['meses', 'semanas'] as const).map((per) => (
+                      <button
+                        key={per}
+                        type="button"
+                        disabled={per === 'semanas' && !pz.ent.semanal}
+                        onClick={() => setPz({ ...pz, periodo: per, cantidad: 1 })}
+                        className={cx('rounded-md px-3 py-1.5 disabled:opacity-30', pz.periodo === per ? 'bg-flame-500 text-ink-950' : 'text-steel-400')}
+                      >
+                        {per === 'meses' ? 'Por mes' : 'Por semana'}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button type="button" className="grid h-8 w-8 place-items-center rounded-lg bg-white/[0.05] hover:bg-white/10" onClick={() => setPz({ ...pz, cantidad: Math.max(1, pz.cantidad - 1) })}>
+                      −
+                    </button>
+                    <span className="tnum w-24 text-center text-sm font-bold">
+                      {pz.cantidad} {pz.periodo === 'meses' ? (pz.cantidad === 1 ? 'mes' : 'meses') : pz.cantidad === 1 ? 'semana' : 'semanas'}
+                    </span>
+                    <button type="button" className="grid h-8 w-8 place-items-center rounded-lg bg-white/[0.05] hover:bg-white/10" onClick={() => setPz({ ...pz, cantidad: Math.min(12, pz.cantidad + 1) })}>
+                      +
+                    </button>
+                  </div>
+                  <span className="text-sm text-steel-300">
+                    {fmt(precioPz(pz), pz.ent.moneda)} · vence el <b className="text-flame-300">{fechaDia(finPlan({ tipoDuracion: pz.periodo, cantidad: pz.cantidad }, hoyISO()))}</b>
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
           <div className="mt-6 flex items-center justify-between">
             <button className="btn-ghost" onClick={() => setPaso(0)}>
               <ArrowLeft className="h-4 w-4" /> Datos
             </button>
             <div className="flex gap-2">
-              <button className="btn-ghost" disabled={guardar.isPending} onClick={() => (setPlan(null), setAcomp([]), setPaso(2))}>
+              <button className="btn-ghost" disabled={guardar.isPending} onClick={() => (setPlan(null), setAcomp([]), setPz(null), setPaso(2))}>
                 Sin plan por ahora
               </button>
               <button
                 className="btn-primary"
-                disabled={!plan || acomp.length !== plan.personas - 1 || guardar.isPending}
+                disabled={!hayCobro || (!!plan && acomp.length !== plan.personas - 1) || guardar.isPending}
                 onClick={() => (plan?.accesoLector ? setPaso(2) : guardar.mutate())}
               >
-                {plan && !plan.accesoLector ? 'Registrar e ir a cobrar' : 'Siguiente: rostro'} <ArrowRight className="h-4 w-4" />
+                {plan?.accesoLector ? 'Siguiente: rostro' : 'Registrar e ir a cobrar'} <ArrowRight className="h-4 w-4" />
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {paso === 3 && plan && !venta && (
+      {paso === 3 && hayCobro && !venta && (
         <div className="grid gap-6 md:grid-cols-[1fr_1.25fr]">
           <div className="space-y-4">
             <div className="flex items-center gap-3 rounded-2xl bg-white/[0.03] p-4">
               <Avatar nombre={nombreCompleto} socioId={cliente?.id} tieneFoto={!!foto} size={52} ring="flame" />
               <div>
                 <p className="font-bold text-white">{nombreCompleto}</p>
-                <p className="text-sm text-steel-400">
-                  Plan {plan.nombre} · {plan.duracion}
-                </p>
+                {plan && (
+                  <p className="text-sm text-steel-400">
+                    Plan {plan.nombre} · {plan.duracion}
+                  </p>
+                )}
+                {pz && (
+                  <p className="text-sm text-flame-300">
+                    Personalizado con {pz.ent.nombre} · {pz.cantidad} {pz.periodo === 'meses' ? (pz.cantidad === 1 ? 'mes' : 'meses') : pz.cantidad === 1 ? 'semana' : 'semanas'}
+                  </p>
+                )}
                 {acomp.length > 0 && <p className="text-xs text-steel-500">+ {acomp.map((a) => a.nombre).join(', ')}</p>}
               </div>
             </div>
+            {plan && (
             <div className="rounded-2xl border border-white/[0.06] p-4">
               <Field label="La mensualidad empieza el" hint={inicio === hoyISO() ? 'Hoy. Si se inscribió días antes, pon ese día.' : `Cuenta desde el ${fecha(inicio)}, no desde hoy.`}>
                 <input type="date" className="input" value={inicio} min={sumarDias(hoyISO(), -30)} max={hoyISO()} onChange={(e) => setInicio(e.target.value || hoyISO())} />
               </Field>
               <p className="mt-2 text-sm font-bold text-flame-300">Vence el {fechaDia(finPlan(plan, inicio))}</p>
             </div>
+            )}
+            {pz && (
+              <div className="rounded-2xl border border-flame-500/20 p-4 text-sm">
+                <p className="flex items-center gap-2 font-bold text-steel-100">
+                  <Award className="h-4 w-4 text-flame-400" /> Personalizado: {fmt(precioPz(pz), pz.ent.moneda)}
+                </p>
+                <p className="mt-1 font-bold text-flame-300">Desde hoy · vence el {fechaDia(finPlan({ tipoDuracion: pz.periodo, cantidad: pz.cantidad }, hoyISO()))}</p>
+              </div>
+            )}
             <div className="rounded-2xl border border-white/[0.06] p-4">
-              <p className="label">Total</p>
-              <Precio monto={plan.precio} moneda={plan.moneda} tasas={cat?.tasas} grande />
+              <p className="label">{plan && pz ? 'Plan' : 'Total'}</p>
+              {plan ? <Precio monto={plan.precio} moneda={plan.moneda} tasas={cat?.tasas} grande /> : pz && <Precio monto={precioPz(pz)} moneda={pz.ent.moneda} tasas={cat?.tasas} grande />}
+              {plan && pz && <p className="mt-2 text-xs text-steel-400">+ personalizado {fmt(precioPz(pz), pz.ent.moneda)} (el total en las tres monedas está a la derecha)</p>}
             </div>
             <button className="btn-ghost btn-sm" onClick={() => setPaso(1)}>
-              <ArrowLeft className="h-4 w-4" /> Cambiar plan
+              <ArrowLeft className="h-4 w-4" /> Cambiar plan o personalizado
             </button>
           </div>
           <div>
@@ -355,7 +457,7 @@ export function ClienteNuevo({ onClose, nombreInicial = '' }: { onClose: () => v
             ) : (
               cat && (
                 <PanelPago
-                  lineas={[{ monto: plan.precio, moneda: plan.moneda }]}
+                  lineas={lineasCobro}
                   metodos={cat.metodos}
                   tasas={cat.tasas}
                   permiteParcial
@@ -379,6 +481,11 @@ export function ClienteNuevo({ onClose, nombreInicial = '' }: { onClose: () => v
               Plan {plan?.nombre} activo del {fecha(venta.membresias[0].fechaInicio)} al {fechaDia(venta.membresias[0].fechaFin)}
             </p>
           )}
+          {venta?.personalizados?.map((p, i) => (
+            <p key={i} className="mx-auto mt-3 max-w-md rounded-xl border border-flame-500/25 bg-flame-500/[0.07] p-3 text-sm text-flame-200">
+              Personalizado con {p.entrenador} del {fecha(p.fechaInicio)} al {fechaDia(p.fechaFin)} — ya aparece en su app
+            </p>
+          ))}
           {venta?.deuda && <p className="mx-auto mt-3 max-w-md rounded-xl border border-warn/30 bg-warn/[0.07] p-3 text-sm text-warn">Quedó debiendo {venta.deuda.texto}</p>}
           {venta?.vuelto && (
             <p className="mx-auto mt-3 max-w-md rounded-xl border border-sky-400/30 bg-sky-400/[0.07] p-3 text-lg font-bold text-sky-300">Entrega de vuelto: {venta.vuelto.texto}</p>

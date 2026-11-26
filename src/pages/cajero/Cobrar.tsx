@@ -414,7 +414,7 @@ export default function Cobrar() {
 
         {tab === 'personalizado' ? (
           !cat?.entrenadores?.length ? (
-            <Empty icon={<Dumbbell className="h-7 w-7" />} title="Ningún entrenador tiene tarifa de personalizado" hint="El dueño la pone en Panel › Entrenadores › (entrenador) › Pago." />
+            <Empty icon={<Dumbbell className="h-7 w-7" />} title="Ningún entrenador tiene tarifa de personalizado" hint="El dueño la pone en Panel › Entrenadores › editar (lápiz) › “Da entrenamiento personalizado”, con el precio por mes." />
           ) : (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {cat.entrenadores.map((e) => {
