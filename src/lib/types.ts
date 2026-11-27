@@ -39,6 +39,8 @@ export interface Deuda {
 
 export interface MembresiaCliente {
   id: string;
+  planId: number;
+  ventaId: string | null;
   fechaInicio: string;
   fechaFin: string;
   estado: 'activa' | 'congelada' | 'anulada' | 'reemplazada';
@@ -94,6 +96,9 @@ export interface PersonalizadoSocio {
   hasta: string | null;
   diasRestantes: number;
   deudaTexto: string | null;
+  /** Último periodo registrado (el que la administración puede corregir) */
+  ultimo: { id: number; fechaInicio: string; fechaFin: string } | null;
+  sinCobro: boolean;
 }
 
 /** Entrenador que se puede cobrar como personalizado en caja. */

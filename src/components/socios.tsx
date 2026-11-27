@@ -8,7 +8,8 @@ import { useAuth } from '../lib/auth';
 import { fecha, fechaHora, hace, hoyISO, money } from '../lib/format';
 import { useCatalogo } from '../lib/hooks';
 import { fmt } from '../lib/monedas';
-import type { SocioDetalle, SocioLista } from '../lib/types';
+import type { MembresiaCliente, PersonalizadoSocio, SocioDetalle, SocioLista } from '../lib/types';
+import { AsignarPersonalizadoModal, EditarMembresiaModal, EditarPersonalizadoModal } from './AjustesAdmin';
 import { DatosRapidos, datosOk, EstadoLector } from './ClienteNuevo';
 import { EstadoPz } from '../pages/cajero/Personalizados';
 import { FotoCaptura } from './FotoCaptura';
@@ -234,6 +235,9 @@ export function SocioDrawer({ socioId, onClose, onCobrar }: { socioId: string; o
   const qc = useQueryClient();
   const [editar, setEditar] = useState(false);
   const [cortesia, setCortesia] = useState(false);
+  const [editMem, setEditMem] = useState<MembresiaCliente | null>(null);
+  const [editPz, setEditPz] = useState<PersonalizadoSocio | null>(null);
+  const [asignarPz, setAsignarPz] = useState(false);
   const { data: s, isLoading } = useQuery({
     queryKey: ['socio', socioId],
     queryFn: () => api<SocioDetalle>(`/socios/${socioId}`),
@@ -242,6 +246,8 @@ export function SocioDrawer({ socioId, onClose, onCobrar }: { socioId: string; o
   const refrescar = () => {
     void qc.invalidateQueries({ queryKey: ['socio', socioId] });
     void qc.invalidateQueries({ queryKey: ['socios'] });
+    void qc.invalidateQueries({ queryKey: ['personalizados'] });
+    void qc.invalidateQueries({ queryKey: ['membresias'] });
   };
   const estado = useMutation({
     mutationFn: (activo: boolean) => api(`/socios/${socioId}/estado`, { body: { activo } }),
@@ -358,6 +364,11 @@ export function SocioDrawer({ socioId, onClose, onCobrar }: { socioId: string; o
                   </p>
                 </div>
                 {m.precio !== undefined && m.moneda && <span className="tnum text-sm text-steel-400">{fmt(Number(m.precio), m.moneda)}</span>}
+                {gestion && m.estado === 'activa' && (
+                  <button className="btn-ghost btn-sm" onClick={() => setEditMem(m)} title="Cambiar fechas o plan (no pasa por caja)">
+                    <Pencil className="h-4 w-4" /> Editar
+                  </button>
+                )}
                 {gestion && enCurso && m.congelable && (
                   <button className="btn-ghost btn-sm" disabled={congelar.isPending} onClick={() => congelar.mutate({ mid: m.id, accion: 'congelar' })}>
                     <Snowflake className="h-4 w-4 text-sky-300" /> Congelar
@@ -373,10 +384,18 @@ export function SocioDrawer({ socioId, onClose, onCobrar }: { socioId: string; o
           })}
         </div>
 
+        <div className="mt-7 flex items-center justify-between">
+          <h4 className="label mb-0">Entrenamiento personalizado</h4>
+          {s.activo && (
+            <button className="btn-ghost btn-sm" onClick={() => setAsignarPz(true)}>
+              <Award className="h-4 w-4 text-flame-400" /> Asignar personalizado
+            </button>
+          )}
+        </div>
+        {(s.personalizados ?? []).length === 0 && <p className="mt-2 text-sm text-steel-500">No tiene entrenamiento personalizado.</p>}
         {(s.personalizados ?? []).length > 0 && (
           <>
-            <h4 className="label mt-7">Entrenamiento personalizado</h4>
-            <div className="space-y-2">
+            <div className="mt-2 space-y-2">
               {s.personalizados!.map((p) => (
                 <div key={p.entrenadorId} className="flex flex-wrap items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
                   <Award className="h-5 w-5 text-flame-400" />
@@ -385,9 +404,15 @@ export function SocioDrawer({ socioId, onClose, onCobrar }: { socioId: string; o
                     <p className="text-xs text-steel-500">
                       {p.estadoTexto}
                       {p.hasta && ` · pagado hasta ${fecha(p.hasta)}`}
+                      {p.sinCobro && ' · registrado sin cobro'}
                     </p>
                   </div>
                   <EstadoPz estado={p.estado} />
+                  {gestion && p.ultimo && (
+                    <button className="btn-ghost btn-sm" onClick={() => setEditPz(p)} title="Cambiar fechas (no pasa por caja)">
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                  )}
                   {p.estado !== 'debe' && (
                     <Link to={`/mostrador?cliente=${s.id}&personalizado=${p.entrenadorId}`} className="btn-ghost btn-sm">
                       Renovar
@@ -435,6 +460,9 @@ export function SocioDrawer({ socioId, onClose, onCobrar }: { socioId: string; o
         {s.asistencias[0] && <p className="mt-3 text-xs text-steel-500">Última visita {hace(s.asistencias.find((a) => a.resultado === 'permitido')?.fechaHora)}</p>}
       </Drawer>
       {editar && <SocioForm socio={s} onClose={() => setEditar(false)} />}
+      {editMem && <EditarMembresiaModal socioId={s.id} m={editMem} onClose={() => setEditMem(null)} onDone={refrescar} />}
+      {editPz && <EditarPersonalizadoModal p={editPz} onClose={() => setEditPz(null)} onDone={refrescar} />}
+      {asignarPz && <AsignarPersonalizadoModal socioInicial={{ id: s.id, nombre, tieneFoto: !!s.foto, codigo: s.codigo }} onClose={() => setAsignarPz(false)} />}
       {cortesia && <CortesiaModal socioId={s.id} nombre={s.nombre} onClose={() => setCortesia(false)} onDone={refrescar} />}
     </>
   );

@@ -3,10 +3,11 @@
  * La recepción lo usa para cobrar y recordar; el dueño ve además el dinero
  * (lo cobrado en el mes y lo que falta pagarle a cada entrenador).
  */
-import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, CalendarCheck, CheckCircle2, Clock, HandCoins, MessageCircle, Search, ShoppingCart, UserPlus, Users } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { AlertTriangle, CalendarCheck, CheckCircle2, Clock, HandCoins, MessageCircle, Pencil, Plus, Search, ShoppingCart, UserPlus, Users } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { AsignarPersonalizadoModal, EditarPersonalizadoModal } from '../../components/AjustesAdmin';
 import { EntrenadorAvatar } from '../../components/entrenadores';
 import { Paginacion, Th, useTabla } from '../../components/Tabla';
 import { Avatar, cx, Empty, Loading, PageHeader, Stat, Tabs } from '../../components/ui';
@@ -28,7 +29,8 @@ interface Fila {
   desde: string | null;
   hasta: string | null;
   diasRestantes: number;
-  ultimoPago: { fecha: string; ticket: number | null; precioTexto: string; duracion: string } | null;
+  ultimoPago: { fecha: string; ticket: number | null; precioTexto: string; duracion: string; sinCobro?: boolean } | null;
+  ultimo: { id: number; fechaInicio: string; fechaFin: string } | null;
   deudaTexto: string | null;
   pagos: number;
 }
@@ -101,6 +103,9 @@ export default function Personalizados() {
   const [entrenador, setEntrenador] = useState<string | null>(null);
   const [filtro, setFiltro] = useState<Filtro>('cobrar');
   const [buscar, setBuscar] = useState('');
+  const [asignar, setAsignar] = useState(false);
+  const [editar, setEditar] = useState<Fila | null>(null);
+  const qc = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ['personalizados'], queryFn: () => api<Respuesta>('/personalizados'), refetchInterval: 60_000 });
 
   const delEntrenador = useMemo(() => (data?.filas ?? []).filter((f) => !entrenador || f.entrenadorId === entrenador), [data, entrenador]);
@@ -132,7 +137,15 @@ export default function Personalizados() {
 
   return (
     <div>
-      <PageHeader title="Personalizados" kicker="Entrenamiento personalizado">
+      <PageHeader
+        title="Personalizados"
+        kicker="Entrenamiento personalizado"
+        actions={
+          <button className="btn-primary" onClick={() => setAsignar(true)}>
+            <Plus className="h-4 w-4" /> Asignar cliente
+          </button>
+        }
+      >
         Quién pagó su personalizado y quién no, con cada entrenador. Se cobra en <b className="text-steel-200">Cobrar › Personalizado</b>.
       </PageHeader>
 
@@ -281,6 +294,11 @@ export default function Personalizados() {
                         </td>
                         <td>
                           <div className="flex justify-end gap-2">
+                            {gestion && f.ultimo && (
+                              <button className="btn-ghost btn-sm" onClick={() => setEditar(f)} title="Cambiar fechas (no pasa por caja)">
+                                <Pencil className="h-4 w-4" />
+                              </button>
+                            )}
                             {wa && (
                               <a href={wa} target="_blank" rel="noreferrer" className="btn-ghost btn-sm" title="Recordarle por WhatsApp">
                                 <MessageCircle className="h-4 w-4 text-ok" />
@@ -301,6 +319,14 @@ export default function Personalizados() {
           </>
         )}
       </div>
+      {asignar && <AsignarPersonalizadoModal onClose={() => setAsignar(false)} />}
+      {editar && (
+        <EditarPersonalizadoModal
+          p={{ ...editar, ultimo: editar.ultimo, sinCobro: !!editar.ultimoPago?.sinCobro }}
+          onClose={() => setEditar(null)}
+          onDone={() => void qc.invalidateQueries({ queryKey: ['personalizados'] })}
+        />
+      )}
     </div>
   );
 }
