@@ -7,6 +7,7 @@ import { AlertTriangle, Ban, Boxes, ClipboardCheck, FileImage, HandCoins, Histor
 import { useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
+import { ProductosPanel, TIPOS_KARDEX } from '../../components/ProductosInventario';
 import { Paginacion, Th, useTabla } from '../../components/Tabla';
 import { Drawer, Empty, Field, Loading, Modal, NumInput, PageHeader, Stat, Tabs, cx } from '../../components/ui';
 import { api, API, session } from '../../lib/api';
@@ -56,29 +57,20 @@ interface Compra {
   saldoTexto: string;
 }
 
-const TIPOS_KARDEX: Record<string, { label: string; color: string }> = {
-  venta: { label: 'Venta', color: 'text-steel-300' },
-  anulacion: { label: 'Venta anulada', color: 'text-sky-300' },
-  devolucion: { label: 'Devolución', color: 'text-sky-300' },
-  compra: { label: 'Compra', color: 'text-ok' },
-  compra_anulada: { label: 'Compra anulada', color: 'text-warn' },
-  ajuste: { label: 'Ajuste manual', color: 'text-warn' },
-  conteo: { label: 'Conteo físico', color: 'text-flame-300' },
-};
 
 const useProductos = () => useQuery({ queryKey: ['productos'], queryFn: () => api<Producto[]>('/productos') });
 const useProveedores = () => useQuery({ queryKey: ['proveedores'], queryFn: () => api<Proveedor[]>('/inventario/proveedores') });
 
 export default function Inventario() {
-  const [tab, setTab] = useState<'compras' | 'conteo' | 'movimientos' | 'proveedores'>('compras');
   const [params, setParams] = useSearchParams();
-  // Desde Planes y productos: «Cargar factura» abre directo el formulario (con el código escaneado, si hay)
+  // «Factura de proveedor» abre directo el formulario (con el código escaneado, si hay)
   const cargar = params.get('cargar') === '1' ? { codigo: params.get('codigo') ?? undefined } : null;
+  const [tab, setTab] = useState<'productos' | 'compras' | 'conteo' | 'movimientos' | 'proveedores'>(cargar ? 'compras' : 'productos');
   const { data: r } = useQuery({ queryKey: ['inventario-resumen'], queryFn: () => api<Resumen>('/inventario/resumen') });
   return (
     <div>
       <PageHeader title="Inventario" kicker="Mercancía">
-        Lo que entra (compras), lo que sale y lo que de verdad hay en el estante.
+        Cada producto con lo que hay. <b className="text-steel-200">Entrada</b> cuando llega mercancía, <b className="text-steel-200">Salida</b> por merma y <b className="text-steel-200">Ajustar</b> con lo que hay en el estante. Todo queda en el historial.
       </PageHeader>
       {r && (
         <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -98,13 +90,15 @@ export default function Inventario() {
           value={tab}
           onChange={setTab}
           items={[
-            { value: 'compras', label: 'Compras' },
+            { value: 'productos', label: 'Productos' },
+            { value: 'compras', label: 'Facturas de proveedor' },
             { value: 'conteo', label: 'Conteo físico' },
             { value: 'movimientos', label: 'Movimientos' },
             { value: 'proveedores', label: 'Proveedores' },
           ]}
         />
       </div>
+      {tab === 'productos' && <ProductosPanel />}
       {tab === 'compras' && <Compras inicial={cargar} limpiar={() => setParams({}, { replace: true })} />}
       {tab === 'conteo' && <Conteo />}
       {tab === 'movimientos' && <Movimientos />}

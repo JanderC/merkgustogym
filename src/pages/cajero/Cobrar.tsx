@@ -199,7 +199,7 @@ export default function Cobrar() {
       return false;
     }
     if (p.controlaStock && p.stock <= 0) {
-      toast.warning(`${p.nombre}: agotado`);
+      toast.warning(`${p.nombre}: agotado`, { description: 'Si sí hay en el estante, pídele a administración que le dé Entrada o lo Ajuste en Inventario.' });
       return true;
     }
     addProducto(p);
