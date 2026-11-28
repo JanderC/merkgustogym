@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowDownCircle, ArrowUpCircle, Award, CalendarCheck, CheckCircle2, Dumbbell, HandCoins, Keyboard, Minus, Package, Plus, Power, Receipt, ScanBarcode, ShoppingBag, Trash2, Undo2, UserPlus, UserRound, Users, X, Zap } from 'lucide-react';
+import { ArrowDownCircle, ArrowUpCircle, Award, CalendarCheck, CalendarClock, CheckCircle2, Dumbbell, HandCoins, Keyboard, Minus, Package, Plus, Power, Receipt, ScanBarcode, ShoppingBag, Trash2, Undo2, UserPlus, UserRound, Users, X, Zap } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -27,8 +27,10 @@ interface ClienteSel {
 }
 type Linea = {
   key: string;
-  tipo: 'membresia' | 'producto' | 'abono' | 'personalizado';
+  tipo: 'membresia' | 'producto' | 'abono' | 'personalizado' | 'clase';
   id: number;
+  /** Clase: día y hora */
+  detalle?: string;
   nombre: string;
   precio: number;
   moneda: Moneda;
@@ -44,6 +46,29 @@ type Linea = {
   periodo?: 'meses' | 'semanas';
   ent?: EntrenadorPersonalizado;
 };
+
+/** Clase con precio que se puede cobrar (GET /pos/clases). */
+interface ClasePos {
+  id: number;
+  nombre: string;
+  dia: string;
+  hora: string;
+  color: string;
+  entrenador: string | null;
+  precio: number;
+  moneda: Moneda;
+  cupo: number | null;
+  inscritos: number;
+  lleno: boolean;
+  esHoy: boolean;
+  /** Con cliente elegido: plan que ya lo cubre, si pagó o si ya está inscrito */
+  cubierto?: string | null;
+  pagado?: boolean;
+  inscrito?: boolean;
+}
+
+/** Rutina / pase del día: entra por recepción → se cobra sin cliente (igual que en el servidor). */
+const esPaseSinCliente = (p: Plan) => !p.accesoLector && p.personas === 1 && p.tipoDuracion === 'dias' && p.cantidad === 1;
 
 export function AbrirTurno() {
   const qc = useQueryClient();
@@ -77,7 +102,8 @@ export default function Cobrar() {
   const { data: cat } = useCatalogo();
   const [params, setParams] = useSearchParams();
   const [cliente, setCliente] = useState<ClienteSel | null>(null);
-  const [tab, setTab] = useState<'planes' | 'tienda' | 'personalizado'>('planes');
+  const [tab, setTab] = useState<'planes' | 'tienda' | 'personalizado' | 'clases'>('planes');
+  const [claseEsperada, setClaseEsperada] = useState<number | null>(null);
   const [lineas, setLineas] = useState<Linea[]>([]);
   const [nuevo, setNuevo] = useState<string | null>(null);
   const [busqueda, setBusqueda] = useState('');
@@ -114,6 +140,44 @@ export default function Cobrar() {
   // Ficha del cliente elegido: vigencia (para renovar) y deudas (para abonar)
   const { data: ficha } = useQuery({ queryKey: ['socio', cliente?.id], enabled: !!cliente, queryFn: () => api<SocioDetalle>(`/socios/${cliente!.id}`) });
   const vigente = ficha?.vigencia.vigente ?? false;
+  // Clases con precio (bailoterapia…): con el cliente elegido dice si ya está cubierto o si ya pagó
+  const { data: clases } = useQuery({
+    queryKey: ['pos-clases', cliente?.id ?? null],
+    queryFn: () => api<ClasePos[]>('/pos/clases', { query: { socioId: cliente?.id } }),
+    enabled: tab === 'clases' || claseEsperada !== null,
+    refetchInterval: tab === 'clases' ? 30_000 : false,
+  });
+  const addClase = (c: ClasePos) => {
+    if (!cliente) {
+      toast.warning('Primero busca o registra a la persona', { description: 'Queda inscrita en la clase con su pago. Si es nueva, usa «Nuevo cliente» (solo cédula, nombre y teléfono).' });
+      return;
+    }
+    if (c.cubierto) {
+      toast.info(`Tiene ${c.cubierto} vigente: la clase le sale incluida`, { description: 'Inscríbelo desde Clases, sin cobrar.' });
+      return;
+    }
+    if (c.pagado) {
+      toast.info(`Ya pagó la clase ${c.nombre}`);
+      return;
+    }
+    if (c.lleno && !c.inscrito) {
+      toast.warning(`Cupo lleno en ${c.nombre}`);
+      return;
+    }
+    setLineas((ls) =>
+      ls.some((l) => l.key === `c${c.id}`)
+        ? ls
+        : [...ls, { key: `c${c.id}`, tipo: 'clase', id: c.id, nombre: `Clase ${c.nombre}`, detalle: `${c.esHoy ? 'Hoy' : fechaDia(c.dia)} ${c.hora}`, precio: c.precio, moneda: c.moneda, cantidad: 1, color: c.color }],
+    );
+  };
+  // ?clase=ID (viene de la clase: «Cobrar clase») → se agrega cuando cargan las clases del cliente
+  useEffect(() => {
+    if (claseEsperada === null || !clases || !cliente) return;
+    const c = clases.find((x) => x.id === claseEsperada);
+    if (c) addClase(c);
+    else toast.warning('Esa clase ya no se puede cobrar (pasó, se canceló o no tiene precio)');
+    setClaseEsperada(null);
+  }, [clases, claseEsperada, cliente]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const ponerPlan = (p: Plan, acompanantes: Array<{ id: string; nombre: string }> = []) =>
     setLineas((ls) => [
@@ -141,6 +205,7 @@ export default function Cobrar() {
   const clienteParam = params.get('cliente');
   const planParam = params.get('plan');
   const pzParam = params.get('personalizado');
+  const claseParam = params.get('clase');
   const { data: pre } = useQuery({ queryKey: ['socio', clienteParam], enabled: !!clienteParam, queryFn: () => api<SocioDetalle>(`/socios/${clienteParam}`) });
   useEffect(() => {
     if (!pre || !cat || !clienteParam) return;
@@ -152,7 +217,12 @@ export default function Cobrar() {
       ponerPersonalizado(e);
       setTab('personalizado');
     } else if (pzParam) toast.warning('Ese entrenador no tiene tarifa de personalizado activa');
+    if (claseParam) {
+      setTab('clases');
+      setClaseEsperada(Number(claseParam));
+    }
     params.delete('cliente');
+    params.delete('clase');
     params.delete('plan');
     params.delete('personalizado');
     setParams(params, { replace: true });
@@ -169,6 +239,8 @@ export default function Cobrar() {
 
   const addPlan = (p: Plan) => {
     if (!cliente) {
+      // Rutina / pase del día: se cobra sin cliente (entra por recepción)
+      if (esPaseSinCliente(p)) return ponerPlan(p);
       toast.warning('Primero busca o registra al cliente', { description: 'El plan se carga a un cliente para activar su rostro en el lector.' });
       return;
     }
@@ -257,7 +329,9 @@ export default function Cobrar() {
           items: lineas.map((l) =>
             l.tipo === 'membresia'
               ? { tipo: 'membresia', id: l.id, acompanantes: l.acompanantes?.map((a) => a.id), desde: l.desde }
-              : l.tipo === 'personalizado'
+              : l.tipo === 'clase'
+                ? { tipo: 'clase', claseId: l.id }
+                : l.tipo === 'personalizado'
                 ? { tipo: 'personalizado', entrenadorId: l.entrenadorId, periodo: l.periodo, cantidad: l.cantidad }
                 : l.tipo === 'abono'
                 ? { tipo: 'abono', deudaId: l.id, monto: l.precio }
@@ -269,7 +343,7 @@ export default function Cobrar() {
     onSuccess: (r) => {
       setExito({ ...r, cliente });
       limpiar();
-      ['turno', 'catalogo', 'socios', 'socio', 'personalizados'].forEach((k) => void qc.invalidateQueries({ queryKey: [k] }));
+      ['turno', 'catalogo', 'socios', 'socio', 'personalizados', 'pos-clases', 'clases', 'clase'].forEach((k) => void qc.invalidateQueries({ queryKey: [k] }));
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -355,7 +429,10 @@ export default function Cobrar() {
                         : 'sin plan'}
                 </p>
               </div>
-              <button className="btn-ghost btn-sm" onClick={() => (setCliente(null), setLineas((l) => l.filter((x) => x.tipo === 'producto')))}>
+              <button
+                className="btn-ghost btn-sm"
+                onClick={() => (setCliente(null), setLineas((l) => l.filter((x) => x.tipo === 'producto' || (x.tipo === 'membresia' && !!cat?.planes.find((p) => p.id === x.id && esPaseSinCliente(p))))))}
+              >
                 <X className="h-4 w-4" /> Cambiar
               </button>
             </div>
@@ -407,12 +484,46 @@ export default function Cobrar() {
           }}
           items={[
             { value: 'planes', label: 'Planes' },
+            { value: 'clases', label: 'Clases' },
             { value: 'personalizado', label: 'Personalizado' },
             { value: 'tienda', label: 'Tienda' },
           ]}
         />
 
-        {tab === 'personalizado' ? (
+        {tab === 'clases' ? (
+          !clases ? (
+            <Loading />
+          ) : clases.length === 0 ? (
+            <Empty icon={<CalendarClock className="h-7 w-7" />} title="No hay clases con precio en los próximos días" hint="Ponle precio a la clase (ej. bailoterapia) en Clases › editar: así la paga quien no tiene mensualidad." />
+          ) : (
+            <div className="space-y-3">
+              {!cliente && <p className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-2.5 text-sm text-steel-400">Busca o registra a la persona arriba: queda inscrita en la clase con su pago. No necesita mensualidad.</p>}
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {clases.map((c) => {
+                  const sel = lineas.some((l) => l.key === `c${c.id}`);
+                  const estado = c.cubierto ? `Incluida en su ${c.cubierto}` : c.pagado ? 'Ya la pagó' : c.lleno && !c.inscrito ? 'Cupo lleno' : null;
+                  return (
+                    <button key={c.id} onClick={() => addClase(c)} className={cx('plate card-hover p-5 pt-7 text-left', sel && 'border-flame-500/60 ring-2 ring-flame-500/40', (!cliente || estado) && 'opacity-60')}>
+                      <span className="absolute inset-x-0 top-0 h-1 rounded-t-2xl" style={{ background: c.color }} />
+                      <p className="font-display text-lg font-extrabold text-white">{c.nombre}</p>
+                      <p className="mt-0.5 text-xs font-bold text-flame-300">
+                        {c.esHoy ? 'Hoy' : fechaDia(c.dia)} · {c.hora}
+                      </p>
+                      <p className="mt-0.5 text-xs text-steel-500">
+                        {c.entrenador ?? 'Sin entrenador'} · {c.cupo ? `${c.inscritos}/${c.cupo} inscritos` : `${c.inscritos} inscritos`}
+                      </p>
+                      <div className="mt-4">
+                        <Precio monto={c.precio} moneda={c.moneda} tasas={cat?.tasas} grande />
+                      </div>
+                      {estado && <p className="mt-2 text-[11px] font-bold text-steel-300">{estado}</p>}
+                      {sel && <CheckCircle2 className="absolute bottom-4 right-4 h-6 w-6 text-flame-500" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )
+        ) : tab === 'personalizado' ? (
           !cat?.entrenadores?.length ? (
             <Empty icon={<Dumbbell className="h-7 w-7" />} title="Ningún entrenador tiene tarifa de personalizado" hint="El dueño la pone en Panel › Entrenadores › editar (lápiz) › “Da entrenamiento personalizado”, con el precio por mes." />
           ) : (
@@ -447,7 +558,7 @@ export default function Cobrar() {
             {cat?.planes.map((p) => {
               const sel = lineas.some((l) => l.key === `m${p.id}`);
               return (
-                <button key={p.id} onClick={() => addPlan(p)} className={cx('plate card-hover p-5 pt-7 text-left', sel && 'border-flame-500/60 ring-2 ring-flame-500/40', !cliente && 'opacity-60')}>
+                <button key={p.id} onClick={() => addPlan(p)} className={cx('plate card-hover p-5 pt-7 text-left', sel && 'border-flame-500/60 ring-2 ring-flame-500/40', !cliente && !esPaseSinCliente(p) && 'opacity-60')}>
                   <span className="absolute inset-x-0 top-0 h-1 rounded-t-2xl" style={{ background: p.color }} />
                   <div className="flex items-start justify-between gap-2">
                     <p className="font-display text-lg font-extrabold text-white">{p.nombre}</p>
@@ -460,7 +571,7 @@ export default function Cobrar() {
                   <p className="mt-0.5 text-xs text-steel-500">
                     {p.duracion} {p.descripcion && `· ${p.descripcion}`}
                   </p>
-                  {!p.accesoLector && <p className="mt-1 text-[11px] font-bold text-steel-400">Entra por recepción (sin lector)</p>}
+                  {!p.accesoLector && <p className="mt-1 text-[11px] font-bold text-steel-400">Entra por recepción (sin lector){esPaseSinCliente(p) && ' · se cobra sin cliente'}</p>}
                   <div className="mt-4">
                     <Precio monto={p.precio} moneda={p.moneda} tasas={cat.tasas} grande />
                   </div>
@@ -562,6 +673,8 @@ export default function Cobrar() {
                       <CalendarCheck className="h-5 w-5 shrink-0" style={{ color: l.color }} />
                     ) : l.tipo === 'personalizado' ? (
                       <Award className="h-5 w-5 shrink-0 text-flame-400" />
+                    ) : l.tipo === 'clase' ? (
+                      <CalendarClock className="h-5 w-5 shrink-0" style={{ color: l.color }} />
                     ) : l.tipo === 'abono' ? (
                       <HandCoins className="h-5 w-5 shrink-0 text-sky-300" />
                     ) : (
@@ -571,6 +684,8 @@ export default function Cobrar() {
                       <p className="truncate text-sm font-bold text-steel-100">{l.nombre}</p>
                       <p className="tnum text-xs text-steel-500">
                         {fmt(l.precio, l.moneda)} {l.cantidad > 1 && `× ${l.cantidad} = ${fmt(l.precio * l.cantidad, l.moneda)}`}
+                        {l.detalle && <span className="font-bold text-flame-300"> · {l.detalle}</span>}
+                        {l.tipo === 'membresia' && !cliente && <span className="font-bold text-steel-400"> · sin cliente</span>}
                       </p>
                     </div>
                     {l.tipo === 'producto' || l.tipo === 'personalizado' ? (
@@ -592,6 +707,7 @@ export default function Cobrar() {
                   {l.acompanantes && l.acompanantes.length > 0 && <p className="ml-8 mt-1 text-xs text-steel-400">+ {l.acompanantes.map((a) => a.nombre).join(', ')}</p>}
                   {l.tipo === 'personalizado' && l.ent && <LineaPersonalizado l={l} ficha={ficha} onPeriodo={(per) => cambiarPeriodo(l.key, per)} />}
                   {l.tipo === 'membresia' &&
+                    cliente &&
                     (() => {
                       const p = cat?.planes.find((x) => x.id === l.id);
                       if (!p) return null;
@@ -692,6 +808,11 @@ export default function Cobrar() {
             <p key={i} className="mt-3 rounded-xl border border-ok/20 bg-ok/[0.06] p-3 text-center text-sm text-ok">
               {m.plan}
               {m.personas > 1 && ` (${m.personas} personas)`}: del {fecha(m.fechaInicio)} al {fechaDia(m.fechaFin)}
+            </p>
+          ))}
+          {(exito.clases ?? []).map((c, i) => (
+            <p key={`cl${i}`} className="mt-3 rounded-xl border border-ok/20 bg-ok/[0.06] p-3 text-center text-sm text-ok">
+              Inscrito en <b>{c.nombre}</b> · {fechaDia(c.dia)} {c.hora} — pagado
             </p>
           ))}
           {(exito.personalizados ?? []).map((p, i) => (

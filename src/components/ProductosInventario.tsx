@@ -205,6 +205,127 @@ export function ProductosPanel() {
   );
 }
 
+// ═════════════ Ayudas: compra por paca y precio sugerido ═════════════
+
+/** Redondea un precio "bonito": pesos a 100, bolívares a 1, dólares a 0,05 (siempre hacia arriba). */
+function precioBonito(n: number, m: Moneda) {
+  const paso = m === 'COP' ? 100 : m === 'VES' ? 1 : 0.05;
+  return Math.ceil(n / paso - 1e-9) * paso;
+}
+const aTexto = (n: number, m: Moneda) => (m === 'COP' ? String(Math.round(n)) : String(Math.round(n * 100) / 100).replace('.', ','));
+
+/** Chips de precio sugerido a partir del costo (margen sobre el precio de venta). */
+function PrecioSugerido({ costo, moneda, onElegir }: { costo: number; moneda: Moneda; onElegir: (texto: string) => void }) {
+  if (!(costo > 0)) return null;
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+      <span className="text-[11px] text-steel-500">Sugerido:</span>
+      {[30, 40, 50].map((g) => {
+        const p = precioBonito(costo / (1 - g / 100), moneda);
+        return (
+          <button key={g} type="button" className="chip border-white/10 text-steel-300 hover:border-flame-500/50 hover:text-flame-300" onClick={() => onElegir(aTexto(p, moneda))}>
+            {fmt(p, moneda)} <span className="text-steel-500">· gana {g}%</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * Cantidad y costo: por unidad, o por paca (bulto, caja): "2 pacas de 24 a $30.000 la paca"
+ * → 48 unidades a $1.250 c/u. También acepta el total pagado.
+ */
+function CantidadCosto({
+  cantidad,
+  setCantidad,
+  costo,
+  setCosto,
+  moneda,
+  etiquetaCantidad,
+  minimo = 1,
+  extraMoneda,
+  enfocar = false,
+}: {
+  cantidad: number;
+  setCantidad: (n: number) => void;
+  costo: string;
+  setCosto: (s: string) => void;
+  moneda: Moneda;
+  etiquetaCantidad: string;
+  minimo?: number;
+  extraMoneda?: React.ReactNode;
+  enfocar?: boolean;
+}) {
+  const [modo, setModo] = useState<'unidad' | 'paca' | 'total'>('unidad');
+  const [pacas, setPacas] = useState(1);
+  const [porPaca, setPorPaca] = useState(24);
+  const [costoPaca, setCostoPaca] = useState('');
+  const [total, setTotal] = useState('');
+  const sim = INFO[moneda].simbolo;
+  const aplicarPaca = (np: number, npp: number, cp: string) => {
+    setCantidad(np * npp);
+    const c = num(cp);
+    setCosto(c > 0 && npp > 0 ? aTexto(c / npp, moneda) : '');
+  };
+  const aplicarTotal = (t: string, n: number) => {
+    const v = num(t);
+    setCosto(v > 0 && n > 0 ? aTexto(v / n, moneda) : '');
+  };
+  return (
+    <div className="rounded-2xl border border-white/[0.06] p-3">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <Tabs
+          value={modo}
+          onChange={(m) => {
+            setModo(m);
+            if (m === 'paca') aplicarPaca(pacas, porPaca, costoPaca);
+          }}
+          items={[
+            { value: 'unidad', label: 'Por unidad' },
+            { value: 'paca', label: 'Por paca / caja' },
+            { value: 'total', label: 'Sé el total' },
+          ]}
+        />
+        {extraMoneda}
+      </div>
+      {modo === 'paca' ? (
+        <div className="grid grid-cols-3 gap-3">
+          <Field label="Pacas">
+            <NumInput className="text-lg" value={pacas} min={1} max={10_000} onChange={(n) => (setPacas(n), aplicarPaca(n, porPaca, costoPaca))} />
+          </Field>
+          <Field label="Unidades por paca">
+            <NumInput className="text-lg" value={porPaca} min={1} max={1000} onChange={(n) => (setPorPaca(n), aplicarPaca(pacas, n, costoPaca))} />
+          </Field>
+          <Field label={`Costo de la paca (${sim})`}>
+            <input className="input tnum text-lg" inputMode="decimal" value={costoPaca} onChange={(e) => (setCostoPaca(e.target.value), aplicarPaca(pacas, porPaca, e.target.value))} placeholder="0" autoFocus={enfocar} />
+          </Field>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-3">
+          <Field label={etiquetaCantidad}>
+            <NumInput className="text-lg" value={cantidad} min={minimo} max={100_000} onChange={(n) => (setCantidad(n), modo === 'total' && aplicarTotal(total, n))} />
+          </Field>
+          {modo === 'total' ? (
+            <Field label={`Total pagado (${sim})`}>
+              <input className="input tnum text-lg" inputMode="decimal" value={total} onChange={(e) => (setTotal(e.target.value), aplicarTotal(e.target.value, cantidad))} placeholder="0" autoFocus={enfocar} />
+            </Field>
+          ) : (
+            <Field label={`Costo de cada una (${sim})`}>
+              <input className="input tnum text-lg" inputMode="decimal" value={costo} onChange={(e) => setCosto(e.target.value)} placeholder="0" autoFocus={enfocar} />
+            </Field>
+          )}
+        </div>
+      )}
+      {modo !== 'unidad' && (
+        <p className="mt-2 text-sm text-steel-300">
+          = <b className="tnum text-white">{cantidad}</b> unidades a <b className="tnum text-white">{num(costo) > 0 ? fmt(num(costo), moneda) : '—'}</b> c/u
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ═════════════ Crear / editar ═════════════
 
 export function ProductoModal({ prod, onClose }: { prod: Partial<Producto> | null; onClose: () => void }) {
@@ -223,6 +344,11 @@ export function ProductoModal({ prod, onClose }: { prod: Partial<Producto> | nul
   });
   const [inicial, setInicial] = useState(0);
   const [costo, setCosto] = useState('');
+  const productos = useQuery({ queryKey: ['productos'], queryFn: () => api<Producto[]>('/productos'), enabled: nuevo });
+  const [mover, setMover] = useState<Producto | null>(null);
+  // Productos parecidos (para no crear dos veces el mismo): comparten las palabras del nombre
+  const palabras = f.nombre.toLowerCase().split(/\s+/).filter((w) => w.length >= 3);
+  const parecidos = nuevo && palabras.length ? (productos.data ?? []).filter((p) => palabras.every((w) => p.nombre.toLowerCase().includes(w)) || (!!f.codigoBarras && p.codigoBarras === f.codigoBarras)).slice(0, 3) : [];
   const precio = num(f.precio);
   const costoN = nuevo ? num(costo) : Number(prod?.costo ?? 0);
   const m = useMutation({
@@ -231,7 +357,9 @@ export function ProductoModal({ prod, onClose }: { prod: Partial<Producto> | nul
       return nuevo ? api<Producto>('/productos', { body }) : api<Producto>(`/productos/${prod!.id}`, { method: 'PUT', body });
     },
     onSuccess: (p) => {
-      toast.success(nuevo ? `${p.nombre} creado${f.controlaStock ? ` con ${p.stock} unidad(es)` : ''}` : 'Producto guardado', { description: nuevo && f.controlaStock && p.stock > 0 ? 'Ya se puede vender en caja' : undefined });
+      toast.success(nuevo ? `${p.nombre} creado${f.controlaStock ? ` con ${p.stock} unidad(es)` : ''}` : 'Producto guardado', {
+        description: !nuevo || !f.controlaStock ? undefined : p.stock > 0 ? 'Ya se puede vender en caja' : 'Queda agotado hasta que le des Entrada cuando llegue',
+      });
       refrescar();
       onClose();
     },
@@ -252,6 +380,25 @@ export function ProductoModal({ prod, onClose }: { prod: Partial<Producto> | nul
       <div className="grid grid-cols-2 gap-4">
         <Field label="Nombre" className="col-span-2">
           <input className="input" autoFocus={nuevo} value={f.nombre} onChange={(e) => setF({ ...f, nombre: e.target.value })} placeholder="Agua mineral 600 ml" />
+          {parecidos.length > 0 && (
+            <div className="mt-2 space-y-1.5 rounded-xl border border-warn/25 bg-warn/[0.05] p-2.5">
+              <p className="text-xs font-bold text-warn">¿Ya existe? Si es el mismo, dale Entrada en vez de crearlo otra vez:</p>
+              {parecidos.map((p) => (
+                <div key={p.id} className="flex items-center justify-between gap-2 text-sm">
+                  <span className="truncate text-steel-200">
+                    {p.nombre} <span className="text-xs text-steel-500">· hay {p.controlaStock ? p.stock : '—'}</span>
+                  </span>
+                  {p.controlaStock ? (
+                    <button type="button" className="btn-ghost btn-sm shrink-0" onClick={() => setMover(p)}>
+                      <PackagePlus className="h-4 w-4" /> Entrada
+                    </button>
+                  ) : (
+                    <span className="text-[11px] text-steel-500">servicio</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </Field>
         <Field label="Código de barras" hint="Haz clic y pásalo por el lector. Vacío si no tiene.">
           <div className="relative">
@@ -274,6 +421,7 @@ export function ProductoModal({ prod, onClose }: { prod: Partial<Producto> | nul
             <Tabs value={f.moneda} onChange={(mo) => setF({ ...f, moneda: mo })} items={MONEDAS.map((x) => ({ value: x, label: INFO[x].simbolo }))} />
           </div>
           <input className="input tnum text-lg" inputMode="decimal" value={f.precio} onChange={(e) => setF({ ...f, precio: e.target.value })} placeholder={f.moneda === 'COP' ? '4.500' : '1,50'} />
+          {f.controlaStock && <PrecioSugerido costo={costoN} moneda={f.moneda} onElegir={(t) => setF((x) => ({ ...x, precio: t }))} />}
           {cat && precio > 0 && (
             <p className="mt-2 text-xs text-steel-500">
               Hoy equivale a{' '}
@@ -295,13 +443,12 @@ export function ProductoModal({ prod, onClose }: { prod: Partial<Producto> | nul
         </div>
 
         {f.controlaStock && nuevo && (
-          <div className="col-span-2 grid grid-cols-2 gap-4 rounded-2xl border border-flame-500/20 bg-flame-500/[0.04] p-4">
-            <Field label="¿Cuántas hay ahora?" hint="Lo que hay en el estante hoy. Puede ser 0.">
-              <NumInput className="text-lg" value={inicial} min={0} max={1_000_000} onChange={setInicial} />
-            </Field>
-            <Field label={`Costo de cada una (${INFO[f.moneda].simbolo})`} hint="Lo que te costó. Para saber la ganancia.">
-              <input className={cx('input tnum text-lg', faltaCosto && 'border-bad/50')} inputMode="decimal" value={costo} onChange={(e) => setCosto(e.target.value)} placeholder="0" />
-            </Field>
+          <div className="col-span-2">
+            <p className="label">Lo que hay ahora y lo que costó</p>
+            <CantidadCosto cantidad={inicial} setCantidad={setInicial} costo={costo} setCosto={setCosto} moneda={f.moneda} etiquetaCantidad="¿Cuántas hay en el estante?" minimo={0} />
+            <p className={cx('mt-1.5 text-xs', faltaCosto ? 'text-bad' : 'text-steel-500')}>
+              {faltaCosto ? 'Escribe el costo: sin costo no se sabe la ganancia.' : 'Puede quedar en 0 si todavía no llega: luego le das Entrada.'}
+            </p>
           </div>
         )}
         {f.controlaStock && !nuevo && (
@@ -331,6 +478,7 @@ export function ProductoModal({ prod, onClose }: { prod: Partial<Producto> | nul
           <Toggle checked={f.activo} onChange={(v) => setF({ ...f, activo: v })} label="Disponible en caja" />
         </div>
       </div>
+      {mover && <MoverStockModal prod={mover} modoInicial="entrada" onClose={() => (setMover(null), onClose())} />}
     </Modal>
   );
 }
@@ -365,6 +513,10 @@ export function MoverStockModal({ prod, modoInicial, onClose }: { prod: Producto
   const metodoOk = pago === 'caja' ? 'efectivo' : metodos.some((m) => m.codigo === metodo) ? metodo : (metodos[0]?.codigo ?? 'efectivo');
   const costoN = num(costo);
   const total = costoN * cantidad;
+  // Costo nuevo en la moneda del producto → ¿el precio de venta sigue cubriéndolo?
+  const costoProd = cat && costoN > 0 ? convertir(costoN, moneda, prod.moneda, cat.tasas) : 0;
+  const precioFinal = precio.trim() ? num(precio) : Number(prod.precio);
+  const [masDatos, setMasDatos] = useState(false);
   const cambiarModo = (m: Modo) => {
     setModo(m);
     setCantidad(m === 'ajuste' ? Math.max(prod.stock, 0) : 1);
@@ -398,7 +550,7 @@ export function MoverStockModal({ prod, modoInicial, onClose }: { prod: Producto
   const dif = cantidad - prod.stock;
   const valido =
     modo === 'entrada'
-      ? cantidad >= 1 && costo.trim() !== '' && (pago !== 'caja' || !!turnoId)
+      ? cantidad >= 1 && costoN > 0 && (pago !== 'caja' || !!turnoId) && !(costoProd > 0 && precioFinal < costoProd)
       : modo === 'salida'
         ? cantidad >= 1 && cantidad <= prod.stock && motivo.trim().length >= 3
         : dif !== 0 && motivo.trim().length >= 3;
@@ -433,24 +585,34 @@ export function MoverStockModal({ prod, modoInicial, onClose }: { prod: Producto
       {modo === 'entrada' && (
         <div className="grid gap-4">
           <p className="text-sm text-steel-400">Llegó mercancía. Se suma al inventario, se recalcula el costo promedio y queda como compra.</p>
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="¿Cuántas llegaron?">
-              <NumInput className="text-lg" value={cantidad} min={1} max={100_000} onChange={setCantidad} />
-            </Field>
-            <Field label="Costo de cada una">
-              <div className="flex gap-2">
-                <input className="input tnum text-lg" inputMode="decimal" value={costo} onChange={(e) => setCosto(e.target.value)} placeholder="0" autoFocus />
-                <select className="input w-20" value={moneda} onChange={(e) => setMoneda(e.target.value as Moneda)}>
-                  {MONEDAS.map((x) => (
-                    <option key={x} value={x}>
-                      {INFO[x].simbolo}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </Field>
-          </div>
-          {costoN > 0 && <p className="-mt-2 text-sm text-steel-300">Total: <b className="tnum text-white">{fmt(total, moneda)}</b></p>}
+          <CantidadCosto
+            cantidad={cantidad}
+            setCantidad={setCantidad}
+            costo={costo}
+            setCosto={setCosto}
+            moneda={moneda}
+            etiquetaCantidad="¿Cuántas llegaron?"
+            enfocar
+            extraMoneda={<Tabs value={moneda} onChange={setMoneda} items={MONEDAS.map((x) => ({ value: x, label: INFO[x].simbolo }))} />}
+          />
+          {costoN > 0 && (
+            <div className="-mt-1 space-y-1 text-sm">
+              <p className="text-steel-300">
+                Total de la compra: <b className="tnum text-white">{fmt(total, moneda)}</b>
+                {Number(prod.costo) > 0 && moneda === prod.moneda && <span className="text-xs text-steel-500"> · antes costaba {fmt(Number(prod.costo), prod.moneda)} c/u</span>}
+              </p>
+              {costoProd > 0 &&
+                (precioFinal < costoProd ? (
+                  <p className="font-bold text-bad">
+                    Con este costo se vendería a pérdida ({fmt(precioFinal, prod.moneda)}). Ponle un precio nuevo abajo.
+                  </p>
+                ) : (
+                  <p className="text-ok">
+                    Se vende a {fmt(precioFinal, prod.moneda)}: gana {fmt(precioFinal - costoProd, prod.moneda)} por unidad ({Math.round(((precioFinal - costoProd) / precioFinal) * 100)}%)
+                  </p>
+                ))}
+            </div>
+          )}
 
           <div>
             <span className="label">¿Cómo se pagó?</span>
@@ -492,7 +654,7 @@ export function MoverStockModal({ prod, modoInicial, onClose }: { prod: Producto
               ))}
           </div>
 
-          <details className="rounded-xl border border-white/[0.06] p-3">
+          <details className="rounded-xl border border-white/[0.06] p-3" open={masDatos || (costoProd > 0 && Number(prod.precio) < costoProd)} onToggle={(e) => setMasDatos((e.target as HTMLDetailsElement).open)}>
             <summary className="cursor-pointer text-sm font-bold text-steel-300">Más datos (opcional): proveedor, nuevo precio, nota</summary>
             <div className="mt-3 grid gap-3">
               <Field label="Proveedor">
@@ -509,6 +671,7 @@ export function MoverStockModal({ prod, modoInicial, onClose }: { prod: Producto
               </Field>
               <Field label={`Nuevo precio de venta (${INFO[prod.moneda].simbolo})`} hint={`Hoy se vende a ${fmt(Number(prod.precio), prod.moneda)}. Vacío = queda igual.`}>
                 <input className="input tnum" inputMode="decimal" value={precio} onChange={(e) => setPrecio(e.target.value)} placeholder="Igual" />
+                <PrecioSugerido costo={costoProd} moneda={prod.moneda} onElegir={setPrecio} />
               </Field>
               <Field label="Nota">
                 <input className="input" value={motivo} maxLength={150} onChange={(e) => setMotivo(e.target.value)} placeholder="Ej. compra en el mercado" />

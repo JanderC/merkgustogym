@@ -43,6 +43,7 @@ export interface VentaHecha {
   items: Array<{ descripcion: string; cantidad: number; precio: string }>;
   membresias: Array<{ plan: string; fechaInicio: string; fechaFin: string; personas: number }>;
   personalizados?: Array<{ entrenador: string; fechaInicio: string; fechaFin: string }>;
+  clases?: Array<{ nombre: string; dia: string; hora: string }>;
 }
 
 // ── Registro rápido: cédula, nombre y teléfono obligatorios ──────────

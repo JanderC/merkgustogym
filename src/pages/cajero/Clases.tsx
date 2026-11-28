@@ -41,6 +41,7 @@ import { Avatar, cx, Drawer, Empty, Field, Loading, Modal, NumInput, PageHeader,
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { fecha, hora, hoyISO, sumarDias } from '../../lib/format';
+import { fmt, INFO, leerMonto, MONEDAS, type Moneda } from '../../lib/monedas';
 
 // ── Tipos ────────────────────────────────────────────────────────────
 type Car = 'movilidad' | 'fuerza' | 'cardio' | 'resistencia' | 'potencia' | 'desplazamiento';
@@ -67,6 +68,10 @@ interface Clase {
   hora: string;
   inscritos: number;
   asistieron: number;
+  /** Precio para quien no tiene mensualidad (bailoterapia…) */
+  precio: string | number | null;
+  moneda: Moneda;
+  pagaron: number;
 }
 interface Inscrito {
   socioId: string;
@@ -84,6 +89,9 @@ interface Inscrito {
   diasRestantes: number;
   hasta: string | null;
   congelada: boolean;
+  /** Pagó la clase en caja */
+  ventaId: string | null;
+  ticket: number | null;
 }
 interface Sugerido {
   socioId: string;
@@ -202,11 +210,13 @@ function ClaseEditor({ clase, fechaInicial, onClose, onGuardada }: { clase?: Cla
     caracteristicas: { ...(clase?.caracteristicas ?? {}) } as Partial<Record<Car, number>>,
     color: clase?.color ?? '#FF8A10',
     repetirSemanas: 0,
+    precio: Number(clase?.precio ?? 0) > 0 ? String(Number(clase!.precio)).replace('.', ',') : '',
+    moneda: (clase?.moneda ?? 'COP') as Moneda,
   });
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((p) => ({ ...p, [k]: v }));
   const m = useMutation({
     mutationFn: () => {
-      const body = { ...f, descripcion: f.descripcion || null, cupo: f.cupo || null };
+      const body = { ...f, descripcion: f.descripcion || null, cupo: f.cupo || null, precio: f.precio.trim() ? leerMonto(f.precio) : null };
       if (clase) {
         const { repetirSemanas: _r, ...resto } = body;
         return api<Clase & { creadas?: number }>(`/clases/${clase.id}`, { method: 'PUT', body: resto });
@@ -332,6 +342,18 @@ function ClaseEditor({ clase, fechaInicial, onClose, onGuardada }: { clase?: Cla
               ))}
             </select>
           </Field>
+          <div className="rounded-2xl border border-flame-500/20 bg-flame-500/[0.04] p-3 sm:col-span-2">
+            <span className="label">Precio de la clase (para quien no tiene mensualidad)</span>
+            <div className="flex flex-wrap items-center gap-2">
+              <input className="input tnum w-40 text-lg" inputMode="decimal" value={f.precio} onChange={(e) => set('precio', e.target.value)} placeholder="Sin precio" />
+              <Tabs value={f.moneda} onChange={(m) => set('moneda', m)} items={MONEDAS.map((m) => ({ value: m, label: INFO[m].simbolo }))} />
+            </div>
+            <p className="mt-1.5 text-xs text-steel-500">
+              {f.precio.trim() && leerMonto(f.precio) > 0
+                ? `Quien llegue sin mensualidad (ej. a bailoterapia) la paga en caja: ${fmt(leerMonto(f.precio), f.moneda)} y queda inscrito. Los que tienen ${f.planId ? 'el plan' : 'mensualidad'} entran incluidos.`
+                : 'Vacío = sin precio: quien no tenga mensualidad entra como cortesía o pagando un pase.'}
+            </p>
+          </div>
           <Field label="Cupo" hint="0 = sin límite">
             <NumInput value={f.cupo} min={0} max={500} onChange={(n) => set('cupo', n)} />
           </Field>
@@ -452,7 +474,7 @@ function ClaseDrawer({ id, onClose, onEditar }: { id: number; onClose: () => voi
   const repetir = useMutation({
     mutationFn: () =>
       api<Clase>('/clases', {
-        body: { nombre: c!.nombre, descripcion: c!.descripcion, planId: c!.planId, entrenadorId: c!.entrenadorId, fecha: sumarDias(c!.dia, 7), hora: c!.hora, duracionMin: c!.duracionMin, cupo: c!.cupo, nivel: c!.nivel, caracteristicas: c!.caracteristicas, color: c!.color },
+        body: { nombre: c!.nombre, descripcion: c!.descripcion, planId: c!.planId, entrenadorId: c!.entrenadorId, fecha: sumarDias(c!.dia, 7), hora: c!.hora, duracionMin: c!.duracionMin, cupo: c!.cupo, nivel: c!.nivel, caracteristicas: c!.caracteristicas, color: c!.color, precio: Number(c!.precio ?? 0) > 0 ? Number(c!.precio) : null, moneda: c!.moneda },
       }),
     onSuccess: (n) => (toast.success(`Repetida el ${diaLargo(n.dia)}`), refrescar()),
     onError: err,
@@ -467,6 +489,7 @@ function ClaseDrawer({ id, onClose, onEditar }: { id: number; onClose: () => voi
 
   const cancelada = c.estado === 'cancelada';
   const lleno = !!c.cupo && c.inscritos.length >= c.cupo;
+  const conPrecio = Number(c.precio ?? 0) > 0;
   const pendientesCubiertos = c.inscritos.filter((i) => !i.asistioEn && i.acceso !== 'sin_mensualidad');
   const asistieron = c.inscritos.filter((i) => i.asistioEn).length;
 
@@ -668,11 +691,21 @@ function ClaseDrawer({ id, onClose, onEditar }: { id: number; onClose: () => voi
                     <p className="text-xs text-steel-500">
                       {i.cedula ? `C.I. ${i.cedula}` : `#${i.codigo}`} {i.telefono && `· ${i.telefono}`}
                     </p>
-                    <div className="mt-1">
+                    <div className="mt-1 flex flex-wrap gap-1.5">
                       <CoberturaChip i={i} planClase={c.plan} />
+                      {i.ventaId && (
+                        <span className="chip border-ok/30 bg-ok/[0.08] text-ok">
+                          <Wallet className="h-3 w-3" /> Pagó la clase{i.ticket ? ` · ticket #${i.ticket}` : ''}
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5">
+                    {!i.asistioEn && !cancelada && conPrecio && i.acceso === 'sin_mensualidad' && !i.ventaId && (
+                      <button className="btn-primary btn-sm" title="Ir a caja: queda inscrito con su pago" onClick={() => nav(`/mostrador?cliente=${i.socioId}&clase=${c.id}`)}>
+                        <Wallet className="h-4 w-4" /> Cobrar clase {fmt(Number(c.precio), c.moneda)}
+                      </button>
+                    )}
                     {i.asistioEn ? (
                       <button className="btn-ghost btn-sm" title="Deshacer entrada" onClick={() => deshacer.mutate(i.socioId)}>
                         <RotateCcw className="h-4 w-4" />
@@ -680,18 +713,22 @@ function ClaseDrawer({ id, onClose, onEditar }: { id: number; onClose: () => voi
                     ) : (
                       c.esHoy &&
                       !cancelada &&
-                      (i.acceso !== 'sin_mensualidad' ? (
+                      (i.acceso !== 'sin_mensualidad' || i.ventaId ? (
                         <button className="btn-ok btn-sm" disabled={pasar.isPending} onClick={() => pasar.mutate({ sid: i.socioId })}>
                           <DoorOpen className="h-4 w-4" /> Dejar pasar
                         </button>
                       ) : (
                         <>
-                          <button className="btn-ghost btn-sm" title="Ir a caja a cobrarle su pase" onClick={() => nav(`/mostrador?cliente=${i.socioId}${c.planId ? `&plan=${c.planId}` : ''}`)}>
-                            <Wallet className="h-4 w-4" /> Cobrar
-                          </button>
-                          <button className="btn-ok btn-sm" disabled={pasar.isPending} onClick={() => pasar.mutate({ sid: i.socioId, cobertura: 'pase' })}>
-                            <Check className="h-4 w-4" /> Ya pagó: pasar
-                          </button>
+                          {!conPrecio && (
+                            <>
+                              <button className="btn-ghost btn-sm" title="Ir a caja a cobrarle su pase" onClick={() => nav(`/mostrador?cliente=${i.socioId}${c.planId ? `&plan=${c.planId}` : ''}`)}>
+                                <Wallet className="h-4 w-4" /> Cobrar
+                              </button>
+                              <button className="btn-ok btn-sm" disabled={pasar.isPending} onClick={() => pasar.mutate({ sid: i.socioId, cobertura: 'pase' })}>
+                                <Check className="h-4 w-4" /> Ya pagó: pasar
+                              </button>
+                            </>
+                          )}
                           <button className="btn-ghost btn-sm" disabled={pasar.isPending} onClick={() => pasar.mutate({ sid: i.socioId, cobertura: 'cortesia' })}>
                             <Gift className="h-4 w-4" /> Cortesía
                           </button>
@@ -757,6 +794,7 @@ function TarjetaClase({ c, onClick }: { c: Clase; onClick: () => void }) {
         {c.nivel && c.nivel !== 'todos' && ` · ${nivelTexto(c.nivel)}`}
       </p>
       {c.plan && <p className="truncate text-[11px] text-steel-500">Plan {c.plan}</p>}
+      {Number(c.precio ?? 0) > 0 && <p className="tnum mt-0.5 text-[11px] font-bold text-flame-300">{fmt(Number(c.precio), c.moneda)} sin mensualidad</p>}
       <div className="mt-2">
         <BarrasCaracteristicas car={c.caracteristicas} compacto />
       </div>
